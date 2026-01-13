@@ -82,6 +82,18 @@ SWEP.RecoilMode = {
 
 SWEP.CurrentRecoilMode = SWEP.RecoilMode.CSGO
 
+SWEP.VignetteStrength = SWEP.VignetteStrength or 0
+
+function SWEP:CanPrimaryAttack()
+	if not IsValid(self:GetOwner()) then return end
+	
+	if self:Clip1() <= 0 then return false end
+	
+	if self:isCurrentlyReloading() then return false end
+	
+	return true
+end
+
 -- main shooting function
 function SWEP:PrimaryAttack(worldsnd)
 	-- bruh
@@ -89,7 +101,8 @@ function SWEP:PrimaryAttack(worldsnd)
 	if not IsValid(owner) then return end
 	
 	-- no ammo?
-	if self:Clip1() <= 0 then
+	if self:CanPrimaryAttack() == false then
+		if self:isCurrentlyReloading() then return end
 		self:EmitSound("Weapon_Pistol.Empty")
 		self:SetNextPrimaryFire(CurTime() + 0.2)
 		return
@@ -114,10 +127,68 @@ function SWEP:PrimaryAttack(worldsnd)
 	-- shoot bullet
 	cone = self.Primary.Cone
 	self:ShootBullet( self.Primary.Damage, self.Primary.NumShots, cone )
+	
+	-- add vignette cus its cool
+	self.VignetteStrength = math.min(self.VignetteStrength + 0.1, 1)
 end
 
 function SWEP:SecondaryAttack()
 	-- lol
+	return
+end
+
+function SWEP:Reload()
+    local owner = self:GetOwner()
+    if not IsValid(owner) then return end
+
+    if self:Clip1() >= self.Primary.ClipSize then return end
+    if self:isCurrentlyReloading() then return end
+
+    -- start reload timer
+    self:StartReloadTimer()
+
+    -- play animation WITHOUT blocking Think()
+    local vm = owner:GetViewModel()
+    if IsValid(vm) then
+        local seq = vm:SelectWeightedSequence(self.ReloadAnim)
+        vm:SendViewModelMatchingSequence(seq)
+    end
+
+    return true
+end
+
+function SWEP:FinishReload()
+    -- safety check
+    if self._reloaded then return end
+    self._reloaded = true
+
+    self:SetClip1(self.Primary.ClipSize)
+end
+
+function SWEP:StartReloadTimer()
+    local owner = self:GetOwner()
+    if not IsValid(owner) then return end
+
+    local vm = owner:GetViewModel()
+    if not IsValid(vm) then return end
+	
+	self._reloaded = false
+
+    local seq = vm:SelectWeightedSequence(self.ReloadAnim)
+    if not seq or seq < 0 then
+        self.ReloadEndTime = CurTime() + 1
+        return
+    end
+
+    local rate = vm:GetPlaybackRate()
+    if not rate or rate <= 0 then rate = 1 end
+
+    local dur = vm:SequenceDuration(seq) / rate
+    self.ReloadEndTime = CurTime() + dur
+end
+
+function SWEP:isCurrentlyReloading()
+    return self.ReloadEndTime and CurTime() < self.ReloadEndTime
 end
 
 function SWEP:GetHeadshotMultiplier(victim, dmginfo)
@@ -133,9 +204,7 @@ function SWEP:DoRecoil()
     -- initialize recoil step
     self.RecoilStep = (self.RecoilStep or 1)
 
-    -- ============================
-    --  MODE 1: CS:GO STYLE RECOIL
-    -- ============================
+    -- csgo recoil, recoil pattern that repeats the last step
     if self.CurrentRecoilMode == self.RecoilMode.CSGO then
         local pat = nil
 
@@ -167,15 +236,13 @@ function SWEP:DoRecoil()
 
         self.RecoilStep = self.RecoilStep + 1
         return
-    -- ============================
-    --  MODE 2: EFT STYLE RECOIL
-    -- ============================
+    -- eft recoil, recoil pattern that STOPS on the last step
     elseif self.CurrentRecoilMode == self.RecoilMode.EFT then
         -- momentum-based recoil
         self.EFT_RecoilPitch = (self.EFT_RecoilPitch or 0) + recoil * 0.25
         self.EFT_RecoilYaw   = (self.EFT_RecoilYaw or 0) + math.Rand(-0.1, 0.1) * recoil
 
-        -- camera punch (lighter than CSGO)
+        -- camera punch
         owner:ViewPunch(Angle(-recoil * 0.5, math.Rand(-0.1, 0.1) * recoil, 0))
 
         -- viewmodel kick
@@ -199,26 +266,22 @@ function SWEP:ShootBullet(dmg, numbul, cone)
 
     self:SendWeaponAnim(self.PrimaryAnim)
 
-    -- recoil‑modified aim
+    -- recoil modified aim
     local ang = owner:EyeAngles() + owner:GetViewPunchAngles()
     local dir = ang:Forward()
 
     -- normal bullet
     local bullet = {}
     bullet.Num    = numbul
-    bullet.Src    = owner:GetShootPos()   -- keep physics correct
+    bullet.Src    = owner:GetShootPos()
     bullet.Dir    = dir
     bullet.Spread = Vector(cone, cone, 0)
-    bullet.Tracer = 0                     -- disable engine tracer
+    bullet.Tracer = 0
     bullet.Force  = dmg * 0.5
     bullet.Damage = dmg
-
-    ----------------------------------------------------
-    -- CALLBACK: draw tracer from attachment "1"
-    ----------------------------------------------------
+	
     bullet.Callback = function(att, tr, dmginfo)
         local startPos = owner:GetShootPos()
-		
         local vm = owner:GetViewModel()
         if IsValid(vm) then
             local id = vm:LookupAttachment("1")
@@ -230,7 +293,7 @@ function SWEP:ShootBullet(dmg, numbul, cone)
             end
         end
 
-        -- spawn your tracer effect
+        -- spawn my tracer effect
         local effect = EffectData()
         effect:SetStart(startPos)
         effect:SetOrigin(tr.HitPos)
@@ -241,20 +304,32 @@ function SWEP:ShootBullet(dmg, numbul, cone)
     owner:FireBullets(bullet)
 end
 
-
 function SWEP:Think()
     local owner = self:GetOwner()
     if not IsValid(owner) then return end
+	
+	-- custom reload that does not block think entirely
+	if SERVER and self.ReloadEndTime and CurTime() >= self.ReloadEndTime then
+		self:FinishReload()
+	end
 	
 	-- make camera recoil slowly return to 0
 	if CLIENT then
 		self.RecoilKick = Lerp(FrameTime() * 10, self.RecoilKick or 0, 0)
 	end
 
-    -- reset CSGO recoil pattern
-    if not owner:KeyDown(IN_ATTACK) then
+    -- check if player is attacking
+	local playerIsAttacking = owner:KeyDown(IN_ATTACK)
+	
+	-- reset CSGO recoil pattern
+    if not playerIsAttacking then
         self.RecoilStep = 1
     end
+	
+	-- make vignette slowly return to 0 when done firing, out of ammo, or reloading
+	if not playerIsAttacking or not self:CanPrimaryAttack()then
+		self.VignetteStrength = Lerp(FrameTime() * 6, self.VignetteStrength, 0)
+	end
 
     -- EFT recoil recovery
     if self.CurrentRecoilMode == self.RecoilMode.EFT then
@@ -278,6 +353,24 @@ function SWEP:CalcViewModelView(vm, oldPos, oldAng, pos, ang)
     return pos, ang
 end
 
+function SWEP:Deploy()
+    local vm = self.Owner:GetViewModel()
+    if IsValid(vm) then
+		local seq = vm:SelectWeightedSequence(ACT_VM_DRAW)
+        vm:SendViewModelMatchingSequence(seq)
+		-- get length of deploy sequence
+		if seq and seq >= 0 then
+			local rate = vm:GetPlaybackRate()
+			if not rate or rate <= 0 then rate = 1 end
+			dur = vm:SequenceDuration(seq) / rate
+		end
+    end
+	
+	self:SetNextPrimaryFire(CurTime() + dur)
+
+    return true
+end
+
 if CLIENT then
 	function SWEP:DrawHUD()
 		local owner = LocalPlayer()
@@ -291,6 +384,9 @@ if CLIENT then
 
 		-- draw ammo arc
 		self:DrawAmmoArc(x + 50, y)
+		
+		-- draw vignette
+		self:DrawRecoilVignette()
 	end
 	
 	function SWEP:DrawCrosshairHUD(x, y)
@@ -394,6 +490,19 @@ if CLIENT then
 				color
 			)
 		end
+	end
+	
+	function SWEP:DrawRecoilVignette()
+		local vignette = Material("vgui/milk_vignette")
+		local strength = self.VignetteStrength or 0
+		if strength <= 0.01 then return end
+
+		local w, h = ScrW(), ScrH()
+		local alpha = 180 * strength
+
+		surface.SetMaterial(vignette)
+		surface.SetDrawColor(255, 255, 255, alpha)
+		surface.DrawTexturedRect(0, 0, w, h)
 	end
 	
 end
