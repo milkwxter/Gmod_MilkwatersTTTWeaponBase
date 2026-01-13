@@ -143,6 +143,7 @@ function SWEP:Reload()
 
     if self:Clip1() >= self.Primary.ClipSize then return end
     if self:isCurrentlyReloading() then return end
+	if owner:GetAmmoCount(self.Primary.Ammo) == 0 then return end
 
     -- start reload timer
     self:StartReloadTimer()
@@ -158,11 +159,31 @@ function SWEP:Reload()
 end
 
 function SWEP:FinishReload()
-    -- safety check
     if self._reloaded then return end
     self._reloaded = true
 
-    self:SetClip1(self.Primary.ClipSize)
+    local owner = self:GetOwner()
+    if not IsValid(owner) then return end
+
+    local clipMax = self.Primary.ClipSize
+    local clip    = self:Clip1()
+    local missing = clipMax - clip
+
+    if missing <= 0 then return end
+
+    -- check reserves
+    local reserve = owner:GetAmmoCount(self.Primary.Ammo)
+
+    if reserve <= 0 then return end
+
+    -- how much can we load
+    local toLoad = math.min(missing, reserve)
+
+    -- fill the magazine
+    self:SetClip1(clip + toLoad)
+
+    -- subtract from reserve
+    owner:RemoveAmmo(toLoad, self.Primary.Ammo)
 end
 
 function SWEP:StartReloadTimer()
