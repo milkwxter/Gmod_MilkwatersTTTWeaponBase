@@ -84,7 +84,6 @@ SWEP.CurrentRecoilMode = SWEP.RecoilMode.CSGO
 
 -- visual effects dont touch
 SWEP.VignetteStrength = SWEP.VignetteStrength or 0
-SWEP.ChromaStrength = SWEP.VignetteStrength or 0
 
 function SWEP:CanPrimaryAttack()
 	if not IsValid(self:GetOwner()) then return end
@@ -132,7 +131,6 @@ function SWEP:PrimaryAttack(worldsnd)
 	
 	-- sfx cus its cool
 	self.VignetteStrength = math.min(self.VignetteStrength + 0.1, 1)
-	self.ChromaStrength = math.min(self.ChromaStrength + 0.2, 1)
 end
 
 function SWEP:SecondaryAttack()
@@ -362,7 +360,6 @@ function SWEP:Think()
 	-- make sfx slowly return to 0 when done firing, out of ammo, or reloading
 	if not playerIsAttacking or not self:CanPrimaryAttack()then
 		self.VignetteStrength = Lerp(FrameTime() * 6, self.VignetteStrength, 0)
-		self.ChromaStrength = Lerp(FrameTime() * 6, self.ChromaStrength, 0)
 	end
 
     -- EFT recoil recovery
