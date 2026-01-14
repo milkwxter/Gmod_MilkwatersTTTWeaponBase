@@ -82,6 +82,7 @@ SWEP.RecoilMode = {
 
 SWEP.CurrentRecoilMode = SWEP.RecoilMode.CSGO
 
+-- visual effects dont touch
 SWEP.VignetteStrength = SWEP.VignetteStrength or 0
 
 function SWEP:CanPrimaryAttack()
@@ -128,7 +129,7 @@ function SWEP:PrimaryAttack(worldsnd)
 	cone = self.Primary.Cone
 	self:ShootBullet( self.Primary.Damage, self.Primary.NumShots, cone )
 	
-	-- add vignette cus its cool
+	-- sfx cus its cool
 	self.VignetteStrength = math.min(self.VignetteStrength + 0.1, 1)
 end
 
@@ -290,6 +291,9 @@ function SWEP:ShootBullet(dmg, numbul, cone)
     -- recoil modified aim
     local ang = owner:EyeAngles() + owner:GetViewPunchAngles()
     local dir = ang:Forward()
+	
+	-- most muzzle attachments are named 1
+	local muzzleAttachment = "1"
 
     -- normal bullet
     local bullet = {}
@@ -305,7 +309,7 @@ function SWEP:ShootBullet(dmg, numbul, cone)
         local startPos = owner:GetShootPos()
         local vm = owner:GetViewModel()
         if IsValid(vm) then
-            local id = vm:LookupAttachment("1")
+            local id = vm:LookupAttachment(muzzleAttachment)
             if id > 0 then
                 local a = vm:GetAttachment(id)
                 if a then
@@ -313,10 +317,16 @@ function SWEP:ShootBullet(dmg, numbul, cone)
                 end
             end
         end
+		
+		
+		local modifiedShootPos = startPos
+		local kick = self.RecoilKick or 0
+		modifiedShootPos = modifiedShootPos - ang:Forward() * kick * 0.5
+		modifiedShootPos = modifiedShootPos + ang:Up() * kick * 0.1
 
         -- spawn my tracer effect
         local effect = EffectData()
-        effect:SetStart(startPos)
+        effect:SetStart(modifiedShootPos)
         effect:SetOrigin(tr.HitPos)
         effect:SetNormal(tr.HitNormal)
         util.Effect("milkwater_tracer", effect)
@@ -347,7 +357,7 @@ function SWEP:Think()
         self.RecoilStep = 1
     end
 	
-	-- make vignette slowly return to 0 when done firing, out of ammo, or reloading
+	-- make sfx slowly return to 0 when done firing, out of ammo, or reloading
 	if not playerIsAttacking or not self:CanPrimaryAttack()then
 		self.VignetteStrength = Lerp(FrameTime() * 6, self.VignetteStrength, 0)
 	end
