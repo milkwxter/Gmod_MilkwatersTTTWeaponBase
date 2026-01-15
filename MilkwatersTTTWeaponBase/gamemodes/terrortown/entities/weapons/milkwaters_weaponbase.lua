@@ -22,6 +22,10 @@ if CLIENT then
    SWEP.CSMuzzleFlashes = true
 end
 
+function SWEP:SetupDataTables()
+    self:NetworkVar("Bool", 0, "Ironsights")
+end
+
 SWEP.Base = "weapon_base"
 
 SWEP.Category           = "TTT"
@@ -45,11 +49,21 @@ SWEP.AmmoEnt 				= "none"
 SWEP.Primary.Ammo           = "none"
 SWEP.Primary.ClipMax        = -1
 
+SWEP.Secondary.Sound          = Sound( "Weapon_Pistol.Empty" )
 SWEP.Secondary.ClipSize     = 1
 SWEP.Secondary.DefaultClip  = 1
 SWEP.Secondary.Automatic    = false
 SWEP.Secondary.Ammo         = "none"
 SWEP.Secondary.ClipMax      = -1
+
+SWEP.ADS_FOV = 70
+SWEP.ADS_Time = 0.18
+SWEP.ADS_RecoilMul = 0.65
+SWEP.ADS_ConeMul   = 0.55
+SWEP.ADS_Pos = Vector(4, 0, 1.5)
+SWEP.ADS_Ang = Angle(0, 0, 0)
+SWEP.IronSightsPos = SWEP.ADS_Pos
+SWEP.IronSightsAng = SWEP.ADS_Ang
 
 SWEP.HeadshotMultiplier = 2
 
@@ -134,8 +148,23 @@ function SWEP:PrimaryAttack(worldsnd)
 end
 
 function SWEP:SecondaryAttack()
-	-- lol
-	return
+	local ironsightsState = self:GetIronsights()
+   self:SetIronsights(not ironsightsState)
+   self:SetZoom(not ironsightsState)
+   
+   if (CLIENT) then
+      self:EmitSound(self.Secondary.Sound)
+   end
+end
+
+function SWEP:SetZoom(state)
+   if IsValid(self:GetOwner()) and self:GetOwner():IsPlayer() then
+      if state then
+         self:GetOwner():SetFOV(60, 0.3)
+      else
+         self:GetOwner():SetFOV(0, 0.2)
+      end
+   end
 end
 
 function SWEP:Reload()
@@ -145,6 +174,10 @@ function SWEP:Reload()
     if self:Clip1() >= self.Primary.ClipSize then return end
     if self:isCurrentlyReloading() then return end
 	if owner:GetAmmoCount(self.Primary.Ammo) == 0 then return end
+	
+	-- stop aiming down sights
+	self:SetIronsights(false)
+	self:SetZoom(false)
 
     -- start reload timer
     self:StartReloadTimer()
@@ -344,6 +377,12 @@ function SWEP:Think()
 		self:FinishReload()
 	end
 	
+	-- custom aim down sights lerp
+	local aiming = self:GetIronsights()
+	local target = aiming and 1 or 0
+	self.ADS_Progress = Lerp(FrameTime() * (1 / self.ADS_Time), self.ADS_Progress or 0, target)
+
+	
 	-- make camera recoil slowly return to 0
 	if CLIENT then
 		self.RecoilKick = Lerp(FrameTime() * 10, self.RecoilKick or 0, 0)
@@ -380,6 +419,16 @@ function SWEP:CalcViewModelView(vm, oldPos, oldAng, pos, ang)
     -- tilt the gun slightly
     ang:RotateAroundAxis(ang:Right(), -kick * 2)
     ang:RotateAroundAxis(ang:Up(), kick * 0.5)
+	
+	-- custom aim down sights
+	if self.ADS_Progress and self.ADS_Progress > 0 then
+		pos = pos + ang:Right() * self.IronSightsPos.x * self.ADS_Progress
+		pos = pos + ang:Forward() * self.IronSightsPos.y * self.ADS_Progress
+		pos = pos + ang:Up() * self.IronSightsPos.z * self.ADS_Progress
+		ang:RotateAroundAxis(ang:Right(), self.IronSightsAng.p * self.ADS_Progress)
+		ang:RotateAroundAxis(ang:Up(), self.IronSightsAng.y * self.ADS_Progress)
+		ang:RotateAroundAxis(ang:Forward(), self.IronSightsAng.r * self.ADS_Progress)
+	end
 
     return pos, ang
 end
@@ -402,6 +451,12 @@ function SWEP:Deploy()
     return true
 end
 
+function SWEP:Holster(weapon)
+	-- stop aiming down sights
+	self:SetIronsights(false)
+	self:SetZoom(false)
+end
+
 if CLIENT then
 	function SWEP:DrawHUD()
 		local owner = LocalPlayer()
@@ -421,8 +476,8 @@ if CLIENT then
 	end
 	
 	function SWEP:DrawCrosshairHUD(x, y)
-		local baseGap = 12
-		local coneGap = (self.Primary.Cone or 0.001) * 300
+		local baseGap = math.max(0.2, 100 * self.Primary.Cone)
+		local coneGap = self.Primary.Cone * 300
 		local recoilKick = (self.RecoilKick or 0) * 4
 		local gap = baseGap + coneGap + recoilKick
 
@@ -431,10 +486,10 @@ if CLIENT then
 
 		surface.SetDrawColor(255, 255, 255, 255)
 
-		surface.DrawRect(x - thickness/2, y - gap - length, thickness, length)
-		surface.DrawRect(x - thickness/2, y + gap, thickness, length)
-		surface.DrawRect(x - gap - length, y - thickness/2, length, thickness)
-		surface.DrawRect(x + gap, y - thickness/2, length, thickness)
+		surface.DrawRect(x - thickness / 2, y - gap - length, thickness, length)
+		surface.DrawRect(x - thickness / 2, y + gap, thickness, length)
+		surface.DrawRect(x - gap - length, y - thickness / 2, length, thickness)
+		surface.DrawRect(x + gap, y - thickness / 2, length, thickness)
 	end
 	
 	-- draw a crazy tesselated slice with convex quads
