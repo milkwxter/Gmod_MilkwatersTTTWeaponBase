@@ -13,10 +13,10 @@ SWEP.AutoSpawnable = true
 SWEP.AllowDrop = true
 
 -- Models
-SWEP.ViewModel = "models/weapons/v_rif_m4a1.mdl"
+SWEP.ViewModel = "models/weapons/cstrike/c_rif_m4a1.mdl"
 SWEP.WorldModel = "models/weapons/w_rif_m4a1.mdl"
 SWEP.UseHands = true
-SWEP.ViewModelFlip = true
+SWEP.ViewModelFlip = false
 
 -- Primary stats
 SWEP.Primary.Sound = Sound( "Weapon_M4A1.Single" )
@@ -39,5 +39,18 @@ SWEP.HeadshotMultiplier = 2.5
 SWEP.PrimaryAnim = ACT_VM_PRIMARYATTACK
 SWEP.ReloadAnim = ACT_VM_RELOAD
 
--- CSGO recoil = 1, EFT recoil = 2
-SWEP.CurrentRecoilMode = 2
+SWEP.RecoilPattern = {
+    {p = 3.50, y = -1.20},
+    {p = 4.20, y = -1.40},
+    {p = 4.80, y = -1.60},
+    {p = 5.40, y = -1.80},
+    {p = 6.00, y = -2.00},
+    {p = 6.40, y = -2.20},
+    {p = 6.20, y = -1.80},
+    {p = 6.00, y = -1.20},
+    {p = 5.60, y = -0.40},
+    {p = 5.20, y =  0.40},
+    {p = 4.80, y =  1.20},
+    {p = 4.40, y =  0.60},
+    {p = 4.20, y = -0.20},
+}

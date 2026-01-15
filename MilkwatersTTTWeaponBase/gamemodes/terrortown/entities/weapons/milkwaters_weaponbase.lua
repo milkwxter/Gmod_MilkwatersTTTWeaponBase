@@ -1,4 +1,5 @@
 AddCSLuaFile()
+resource.AddFile("materials/vgui/milk_vignette.vmt")
 
 SWEP.Kind = WEAPON_NONE
 SWEP.CanBuy = nil
@@ -7,6 +8,11 @@ if CLIENT then
    SWEP.EquipMenuData = nil
    
    SWEP.Icon = "vgui/ttt/icon_nades"
+   
+   SWEP.DrawCrosshair = false
+   SWEP.ViewModelFOV = 82
+   SWEP.ViewModelFlip = false
+   SWEP.CSMuzzleFlashes = true
 end
 
 SWEP.AutoSpawnable = false
@@ -14,13 +20,6 @@ SWEP.AutoSpawnable = false
 SWEP.AllowDrop = true
 
 SWEP.IsSilent = false
-
-if CLIENT then
-   SWEP.DrawCrosshair   = false
-   SWEP.ViewModelFOV    = 82
-   SWEP.ViewModelFlip   = true
-   SWEP.CSMuzzleFlashes = true
-end
 
 function SWEP:SetupDataTables()
     self:NetworkVar("Bool", 0, "Ironsights")
@@ -60,7 +59,7 @@ SWEP.ADS_FOV = 70
 SWEP.ADS_Time = 0.18
 SWEP.ADS_RecoilMul = 0.65
 SWEP.ADS_ConeMul   = 0.55
-SWEP.ADS_Pos = Vector(4, 0, 1.5)
+SWEP.ADS_Pos = Vector(3, 0, 1)
 SWEP.ADS_Ang = Angle(0, 0, 0)
 SWEP.IronSightsPos = SWEP.ADS_Pos
 SWEP.IronSightsAng = SWEP.ADS_Ang
@@ -77,24 +76,10 @@ SWEP.ReloadAnim = ACT_VM_RELOAD
 
 SWEP.fingerprints = {}
 
+-- csgo style recoil pattern
 SWEP.RecoilPattern = {
-    {p = 1.0, y = 0.00},
-    {p = 1.1, y = 0.15},
-    {p = 1.2, y = 0.30},
-    {p = 1.3, y = 0.45},
-    {p = 1.4, y = 0.30},
-    {p = 1.5, y = 0.10},
-    {p = 1.6, y = -0.10},
-    {p = 1.7, y = -0.25},
-    {p = 1.8, y = -0.40},
+    {p = 2.50, y = 1.00},
 }
-
-SWEP.RecoilMode = {
-    CSGO = 1,
-    EFT  = 2
-}
-
-SWEP.CurrentRecoilMode = SWEP.RecoilMode.CSGO
 
 -- visual effects dont touch
 SWEP.VignetteStrength = SWEP.VignetteStrength or 0
@@ -126,9 +111,6 @@ function SWEP:PrimaryAttack(worldsnd)
 	-- timing
 	self:SetNextPrimaryFire(CurTime() + self.Primary.Delay)
 	
-	-- recoil (camera kick)
-	self:DoRecoil()
-	
 	-- consume ammo
 	self:TakePrimaryAmmo(1)
 	
@@ -143,18 +125,25 @@ function SWEP:PrimaryAttack(worldsnd)
 	cone = self.Primary.Cone
 	self:ShootBullet( self.Primary.Damage, self.Primary.NumShots, cone )
 	
+	-- do recoil under super specific circumstances
+	if SERVER and game.SinglePlayer() or CLIENT and not game.SinglePlayer() and IsFirstTimePredicted() then
+		self:DoRecoil()
+	end
+	
 	-- sfx cus its cool
 	self.VignetteStrength = math.min(self.VignetteStrength + 0.1, 1)
 end
 
 function SWEP:SecondaryAttack()
+	if self:isCurrentlyReloading() then return end
+	
 	local ironsightsState = self:GetIronsights()
-   self:SetIronsights(not ironsightsState)
-   self:SetZoom(not ironsightsState)
+	self:SetIronsights(not ironsightsState)
+	self:SetZoom(not ironsightsState)
    
-   if CLIENT and not ironsightsState then
-      self:EmitSound(self.Secondary.Sound, 75, 100, 1, CHAN_BODY)
-   end
+	if CLIENT and not ironsightsState then
+		self:EmitSound(self.Secondary.Sound, 75, 100, 1, CHAN_BODY)
+	end
 end
 
 local function GetPlayerBaseFOV(ply)
@@ -186,7 +175,10 @@ function SWEP:Reload()
 	-- stop aiming down sights
 	self:SetIronsights(false)
 	self:SetZoom(false)
-
+	
+	-- reset recoil pattern
+	self.RecoilStep = 1
+	
     -- start reload timer
     self:StartReloadTimer()
 
@@ -273,59 +265,36 @@ function SWEP:DoRecoil()
     self.RecoilStep = (self.RecoilStep or 1)
 
     -- csgo recoil, recoil pattern that repeats the last step
-    if self.CurrentRecoilMode == self.RecoilMode.CSGO then
-        local pat = nil
+	local pat = nil
 
-        if self.RecoilPattern then
-            pat = self.RecoilPattern[self.RecoilStep] or self.RecoilPattern[#self.RecoilPattern]
-        end
+	if self.RecoilPattern then
+		pat = self.RecoilPattern[self.RecoilStep] or self.RecoilPattern[#self.RecoilPattern]
+	end
 
-        local pitch = recoil
-        local yaw = math.Rand(-0.20, 0.20) * recoil
+	local pitch = recoil
+	local yaw = math.Rand(-0.20, 0.20) * recoil
 
-        if pat then
-            pitch = pat.p * recoil
-            yaw = pat.y * recoil
-        end
+	if pat then
+		pitch = pat.p * recoil
+		yaw = pat.y * recoil
+	end
 
-        -- camera punch
-        owner:ViewPunch(Angle(-pitch * 1.2, yaw * 1.0, 0))
+	-- camera punch
+	owner:ViewPunch(Angle(-pitch * 1.2, yaw * 1.0, 0))
 
-        -- viewmodel kick
-        if CLIENT and owner == LocalPlayer() then
-            self.RecoilKick = (self.RecoilKick or 0) + pitch * 0.3
-        end
+	-- viewmodel kick
+	if CLIENT and owner == LocalPlayer() then
+		self.RecoilKick = (self.RecoilKick or 0) + pitch * 0.3
+	end
 
-        -- actual aim drift
-        local ang = owner:EyeAngles()
-        ang.p = ang.p - pitch * 0.12
-        ang.y = ang.y + yaw * 0.12
-        owner:SetEyeAngles(ang)
+	-- actual aim drift
+	local ang = owner:EyeAngles()
+	ang.p = ang.p - pitch * 0.12
+	ang.y = ang.y - yaw * 0.12
+	owner:SetEyeAngles(ang)
 
-        self.RecoilStep = self.RecoilStep + 1
-        return
-    -- eft recoil, recoil pattern that STOPS on the last step
-    elseif self.CurrentRecoilMode == self.RecoilMode.EFT then
-        -- momentum-based recoil
-        self.EFT_RecoilPitch = (self.EFT_RecoilPitch or 0) + recoil * 0.25
-        self.EFT_RecoilYaw   = (self.EFT_RecoilYaw or 0) + math.Rand(-0.1, 0.1) * recoil
-
-        -- camera punch
-        owner:ViewPunch(Angle(-recoil * 0.5, math.Rand(-0.1, 0.1) * recoil, 0))
-
-        -- viewmodel kick
-        if CLIENT and owner == LocalPlayer() then
-            self.RecoilKick = (self.RecoilKick or 0) + recoil * 0.2
-        end
-
-        -- apply accumulated recoil
-        local ang = owner:EyeAngles()
-        ang.p = ang.p - self.EFT_RecoilPitch
-        ang.y = ang.y + self.EFT_RecoilYaw
-        owner:SetEyeAngles(ang)
-
-        return
-    end
+	self.RecoilStep = self.RecoilStep + 1
+	return
 end
 
 function SWEP:ShootBullet(dmg, numbul, cone)
@@ -347,36 +316,10 @@ function SWEP:ShootBullet(dmg, numbul, cone)
     bullet.Src    = owner:GetShootPos()
     bullet.Dir    = dir
     bullet.Spread = Vector(cone, cone, 0)
-    bullet.Tracer = 0
+    bullet.Tracer = 1
+	bullet.TracerName = "milkwater_tracer"
     bullet.Force  = dmg * 0.5
     bullet.Damage = dmg
-	
-    bullet.Callback = function(att, tr, dmginfo)
-        local startPos = owner:GetShootPos()
-        local vm = owner:GetViewModel()
-        if IsValid(vm) then
-            local id = vm:LookupAttachment(muzzleAttachment)
-            if id > 0 then
-                local a = vm:GetAttachment(id)
-                if a then
-                    startPos = a.Pos
-                end
-            end
-        end
-		
-		
-		local modifiedShootPos = startPos
-		local kick = self.RecoilKick or 0
-		modifiedShootPos = modifiedShootPos - ang:Forward() * kick * 0.5
-		modifiedShootPos = modifiedShootPos + ang:Up() * kick * 0.1
-
-        -- spawn my tracer effect
-        local effect = EffectData()
-        effect:SetStart(modifiedShootPos)
-        effect:SetOrigin(tr.HitPos)
-        effect:SetNormal(tr.HitNormal)
-        util.Effect("milkwater_tracer", effect)
-    end
 
     owner:FireBullets(bullet)
 end
@@ -394,7 +337,6 @@ function SWEP:Think()
 	local aiming = self:GetIronsights()
 	local target = aiming and 1 or 0
 	self.ADS_Progress = Lerp(FrameTime() * (1 / self.ADS_Time), self.ADS_Progress or 0, target)
-
 	
 	-- make camera recoil slowly return to 0
 	if CLIENT then
@@ -404,46 +346,15 @@ function SWEP:Think()
     -- check if player is attacking
 	local playerIsAttacking = owner:KeyDown(IN_ATTACK)
 	
-	-- reset CSGO recoil pattern
+	-- reset recoil pattern
     if not playerIsAttacking then
-        self.RecoilStep = 1
+		self.RecoilStep = 1
     end
 	
 	-- make sfx slowly return to 0 when done firing, out of ammo, or reloading
 	if not playerIsAttacking or not self:CanPrimaryAttack()then
 		self.VignetteStrength = Lerp(FrameTime() * 6, self.VignetteStrength, 0)
 	end
-
-    -- EFT recoil recovery
-    if self.CurrentRecoilMode == self.RecoilMode.EFT then
-        self.EFT_RecoilPitch = Lerp(FrameTime() * 6, self.EFT_RecoilPitch or 0, 0)
-        self.EFT_RecoilYaw = Lerp(FrameTime() * 6, self.EFT_RecoilYaw or 0, 0)
-    end
-end
-
-function SWEP:CalcViewModelView(vm, oldPos, oldAng, pos, ang)
-	-- get current kick
-    local kick = self.RecoilKick or 0
-
-    -- push the gun backward and slightly up
-    pos = pos - ang:Forward() * kick * 0.5
-    pos = pos + ang:Up() * kick * 0.1
-
-    -- tilt the gun slightly
-    ang:RotateAroundAxis(ang:Right(), -kick * 2)
-    ang:RotateAroundAxis(ang:Up(), kick * 0.5)
-	
-	-- custom aim down sights
-	if self.ADS_Progress and self.ADS_Progress > 0 then
-		pos = pos + ang:Right() * self.IronSightsPos.x * self.ADS_Progress
-		pos = pos + ang:Forward() * self.IronSightsPos.y * self.ADS_Progress
-		pos = pos + ang:Up() * self.IronSightsPos.z * self.ADS_Progress
-		ang:RotateAroundAxis(ang:Right(), self.IronSightsAng.p * self.ADS_Progress)
-		ang:RotateAroundAxis(ang:Up(), self.IronSightsAng.y * self.ADS_Progress)
-		ang:RotateAroundAxis(ang:Forward(), self.IronSightsAng.r * self.ADS_Progress)
-	end
-
-    return pos, ang
 end
 
 function SWEP:Deploy()
@@ -474,6 +385,36 @@ function SWEP:Holster(weapon)
 end
 
 if CLIENT then
+	function SWEP:CalcViewModelView(vm, oldPos, oldAng, pos, ang)
+		-- get current kick
+		local kick = self.RecoilKick or 0
+
+		-- push the gun backward and slightly up
+		pos = pos - ang:Forward() * kick * 0.5
+		pos = pos + ang:Up() * kick * 0.1
+		
+		 -- mirror if possible
+		if IsValid(self:GetOwner()) and self:GetOwner():IsPlayer() and ent == self:GetOwner():GetViewModel() and self.ViewModelFlip then
+			ang.r = -ang.r
+		end
+
+		-- tilt the gun slightly
+		ang:RotateAroundAxis(ang:Right(), -kick * 2)
+		ang:RotateAroundAxis(ang:Up(), kick * 0.5)
+		
+		-- custom aim down sights
+		if self.ADS_Progress and self.ADS_Progress > 0 then
+			pos = pos - ang:Right() * self.IronSightsPos.x * self.ADS_Progress
+			pos = pos - ang:Forward() * self.IronSightsPos.y * self.ADS_Progress
+			pos = pos - ang:Up() * self.IronSightsPos.z * self.ADS_Progress
+			ang:RotateAroundAxis(ang:Right(), self.IronSightsAng.p * self.ADS_Progress)
+			ang:RotateAroundAxis(ang:Up(), self.IronSightsAng.y * self.ADS_Progress)
+			ang:RotateAroundAxis(ang:Forward(), self.IronSightsAng.r * self.ADS_Progress)
+		end
+
+		return pos, ang
+	end
+
 	function SWEP:DrawHUD()
 		local owner = LocalPlayer()
 		if not IsValid(owner) then return end
@@ -489,6 +430,9 @@ if CLIENT then
 		
 		-- draw vignette
 		self:DrawRecoilVignette()
+		
+		-- lol
+		self:DrawRecoilPatternHUD()
 	end
 	
 	function SWEP:DrawCrosshairHUD(x, y)
@@ -604,6 +548,84 @@ if CLIENT then
 		surface.SetMaterial(vignette)
 		surface.SetDrawColor(255, 255, 255, alpha)
 		surface.DrawTexturedRect(0, 0, w, h)
+	end
+	
+	function SWEP:DrawRecoilPatternHUD()
+		local pat = self.RecoilPattern
+		if not pat then return end
+
+		local step = math.min(self.RecoilStep or 1, #pat) or 1
+
+		-- HUD box
+		local x = 10
+		local y = ScrH() - 400
+		local w = 200
+		local h = 200
+
+		-- background
+		surface.SetDrawColor(0, 0, 0, 120)
+		surface.DrawRect(x, y, w, h)
+
+		-- border
+		surface.SetDrawColor(255, 255, 255, 40)
+		surface.DrawOutlinedRect(x, y, w, h)
+		
+		-- border text
+		draw.SimpleText("Current Recoil Pattern", "DermaDefaultBold", x + 10, y + h + 10, Color(255, 255, 255, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+		
+		-- build cumulative pitch/yaw
+		local cumP = {}
+		local cumY = {}
+
+		cumP[1] = pat[1].p
+		cumY[1] = pat[1].y
+
+		for i = 2, #pat do
+			cumP[i] = cumP[i-1] + pat[i].p
+			cumY[i] = cumY[i-1] + pat[i].y
+		end
+
+		-- find max values for scaling
+		local maxCumP, maxCumY = 0, 0
+		for i = 1, #pat do
+			maxCumP = math.max(maxCumP, cumP[i])
+			maxCumY = math.max(maxCumY, math.abs(cumY[i]))
+		end
+
+		local yawScale = 0.8
+
+		-- draw pattern
+		for i = 1, #pat - 1 do
+			local ax = x + w * 0.5 + (cumY[i] / maxCumY) * (w * 0.5) * yawScale
+			local ay = y + h - (cumP[i] / maxCumP) * h
+
+			local bx = x + w * 0.5 + (cumY[i+1] / maxCumY) * (w * 0.5) * yawScale
+			local by = y + h - (cumP[i+1] / maxCumP) * h
+
+			surface.SetDrawColor(255, 255, 255, 180)
+			surface.DrawLine(ax, ay, bx, by)
+
+			-- dot
+			surface.SetDrawColor(255, 255, 255, 220)
+			surface.DrawRect(ax - 2, ay - 2, 4, 4)
+		end
+
+
+		-- highlight current step
+		if pat[step] then
+			local c = pat[step]
+			local repeating = (step >= #self.RecoilPattern)
+
+			local cx = x + w * 0.5 + (cumY[step] / maxCumY) * (w * 0.5) * yawScale
+			local cy = y + h - (cumP[step] / maxCumP) * h
+
+			surface.SetDrawColor(255, 100, 100, 255)
+			surface.DrawRect(cx - 3, cy - 3, 6, 6)
+
+			if repeating then
+				draw.SimpleText("REPEATING", "DermaDefaultBold", cx + 10, cy - 10, Color(255, 100, 100, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
+			end
+		end
 	end
 	
 end

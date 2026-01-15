@@ -1,12 +1,15 @@
 EFFECT.Mat = Material("trails/laser")
 
 function EFFECT:Init(data)
-    self.StartPos = data:GetStart()
-    self.HitPos   = data:GetOrigin()
-    self.Normal   = data:GetNormal()
+    self.Position = data:GetStart()
+	self.EndPos = data:GetOrigin()
+	self.WeaponEnt = data:GetEntity()
+	self.Attachment = data:GetAttachment()
+	self.StartPos = self:GetTracerShootPos( self.Position, self.WeaponEnt, self.Attachment )
+	self:SetRenderBoundsWS( self.StartPos, self.EndPos )
 
-    -- extend the tracer slightly past the hit point
-    self.EndPos = self.HitPos + self.Normal * 4
+	self.Dir = ( self.EndPos - self.StartPos ):GetNormalized()
+	self.Dist = self.StartPos:Distance( self.EndPos )
 
     self.LifeTime = 0.05
     self.DieTime  = CurTime() + self.LifeTime
