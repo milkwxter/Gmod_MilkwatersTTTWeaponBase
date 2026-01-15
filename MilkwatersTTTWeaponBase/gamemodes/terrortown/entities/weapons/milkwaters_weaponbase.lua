@@ -49,7 +49,7 @@ SWEP.AmmoEnt 				= "none"
 SWEP.Primary.Ammo           = "none"
 SWEP.Primary.ClipMax        = -1
 
-SWEP.Secondary.Sound          = Sound( "Weapon_Pistol.Empty" )
+SWEP.Secondary.Sound		= Sound( "milkwater_common/shoulder_weapon.wav" )
 SWEP.Secondary.ClipSize     = 1
 SWEP.Secondary.DefaultClip  = 1
 SWEP.Secondary.Automatic    = false
@@ -152,19 +152,27 @@ function SWEP:SecondaryAttack()
    self:SetIronsights(not ironsightsState)
    self:SetZoom(not ironsightsState)
    
-   if (CLIENT) then
-      self:EmitSound(self.Secondary.Sound)
+   if CLIENT and not ironsightsState then
+      self:EmitSound(self.Secondary.Sound, 75, 100, 1, CHAN_BODY)
    end
 end
 
+local function GetPlayerBaseFOV(ply)
+    if not IsValid(ply) then return 90 end
+	
+    return ply:GetInfoNum("fov_desired", 90)
+end
+
 function SWEP:SetZoom(state)
-   if IsValid(self:GetOwner()) and self:GetOwner():IsPlayer() then
-      if state then
-         self:GetOwner():SetFOV(60, 0.3)
-      else
-         self:GetOwner():SetFOV(0, 0.2)
-      end
-   end
+	local owner = self:GetOwner()
+	if not IsValid(owner) or not owner:IsPlayer() then return end
+	
+	if state then
+		owner:SetFOV(60, 0.3)
+	else
+		local baseFOV = GetPlayerBaseFOV(owner)
+		owner:SetFOV(baseFOV, 0.2)
+	end
 end
 
 function SWEP:Reload()
@@ -255,6 +263,11 @@ function SWEP:DoRecoil()
     if not IsValid(owner) then return end
 
     local recoil = self.Primary.Recoil or 1
+	
+	-- modify if aiming down sights
+	if self:GetIronsights() then
+		recoil = recoil * 0.5
+	end
 
     -- initialize recoil step
     self.RecoilStep = (self.RecoilStep or 1)
@@ -268,7 +281,7 @@ function SWEP:DoRecoil()
         end
 
         local pitch = recoil
-        local yaw = math.Rand(-0.25, 0.25) * recoil
+        local yaw = math.Rand(-0.20, 0.20) * recoil
 
         if pat then
             pitch = pat.p * recoil
