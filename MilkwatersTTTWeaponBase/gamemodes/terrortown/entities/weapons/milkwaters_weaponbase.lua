@@ -455,6 +455,9 @@ function SWEP:Holster(weapon)
 	-- stop aiming down sights
 	self:SetIronsights(false)
 	self:SetZoom(false)
+	
+	-- actually holster
+	return true
 end
 
 if CLIENT then
@@ -481,15 +484,14 @@ if CLIENT then
 		local recoilKick = (self.RecoilKick or 0) * 4
 		local gap = baseGap + coneGap + recoilKick
 
-		local length = 8
-		local thickness = 2
+		local length = 8 + recoilKick
 
 		surface.SetDrawColor(255, 255, 255, 255)
-
-		surface.DrawRect(x - thickness / 2, y - gap - length, thickness, length)
-		surface.DrawRect(x - thickness / 2, y + gap, thickness, length)
-		surface.DrawRect(x - gap - length, y - thickness / 2, length, thickness)
-		surface.DrawRect(x + gap, y - thickness / 2, length, thickness)
+		
+		surface.DrawLine(x - gap, y, x - gap - length, y) -- left
+		surface.DrawLine(x + gap, y, x + gap + length, y) -- right
+		surface.DrawLine(x, y - gap, x, y - gap - length) -- top
+		surface.DrawLine(x, y + gap, x, y + gap + length) -- bottom
 	end
 	
 	-- draw a crazy tesselated slice with convex quads

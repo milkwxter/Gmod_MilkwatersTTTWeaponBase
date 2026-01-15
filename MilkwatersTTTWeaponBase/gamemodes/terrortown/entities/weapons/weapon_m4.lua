@@ -23,7 +23,7 @@ SWEP.Primary.Sound = Sound( "Weapon_M4A1.Single" )
 SWEP.Primary.Damage = 27
 SWEP.Primary.NumShots = 1
 SWEP.Primary.Delay = 0.25
-SWEP.Primary.Cone = 0.002
+SWEP.Primary.Cone = 0.005
 SWEP.Primary.Recoil = 3
 
 SWEP.Primary.ClipSize = 20
