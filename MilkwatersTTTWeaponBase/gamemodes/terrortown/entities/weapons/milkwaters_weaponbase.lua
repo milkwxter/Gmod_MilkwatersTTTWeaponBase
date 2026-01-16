@@ -55,6 +55,8 @@ SWEP.Secondary.Automatic    = false
 SWEP.Secondary.Ammo         = "none"
 SWEP.Secondary.ClipMax      = -1
 
+SWEP.ShotgunReload = false
+
 SWEP.ADS_FOV = 70
 SWEP.ADS_Time = 0.18
 SWEP.ADS_RecoilMul = 0.65
@@ -67,6 +69,7 @@ SWEP.IronSightsAng = SWEP.ADS_Ang
 SWEP.HeadshotMultiplier = 2
 
 SWEP.StoredAmmo = 0
+
 SWEP.IsDropped = false
 
 SWEP.DeploySpeed = 0.5
@@ -100,9 +103,18 @@ function SWEP:PrimaryAttack(worldsnd)
 	local owner = self:GetOwner()
 	if not IsValid(owner) then return end
 	
+	-- cancel shotgun reload immediately
+	if self.ShotgunReload and self._reloaded == false then
+		self._reloaded = true
+		self.ReloadEndTime = nil
+	end
+	
 	-- no ammo?
 	if self:CanPrimaryAttack() == false then
+		-- dont play sound if reloading
 		if self:isCurrentlyReloading() then return end
+		
+		-- play a sound to signal empty gun
 		self:EmitSound("Weapon_Pistol.Empty")
 		self:SetNextPrimaryFire(CurTime() + 0.2)
 		return
@@ -200,23 +212,51 @@ function SWEP:FinishReload()
     if not IsValid(owner) then return end
 
     local clipMax = self.Primary.ClipSize
-    local clip    = self:Clip1()
-    local missing = clipMax - clip
-
-    if missing <= 0 then return end
-
-    -- check reserves
+    local clip = self:Clip1()
     local reserve = owner:GetAmmoCount(self.Primary.Ammo)
 
     if reserve <= 0 then return end
+    if clip >= clipMax then return end
 
-    -- how much can we load
+    if self.ShotgunReload then
+		-- get viewmodel
+		local vm = owner:GetViewModel()
+		
+        -- load a shell
+        self:SetClip1(clip + 1)
+        owner:RemoveAmmo(1, self.Primary.Ammo)
+		
+		-- check if full or no more ammo in reserve
+		if clip + 1 == clipMax or reserve - 1 == 0 then
+			-- finish reload animation
+			if IsValid(vm) then
+				local seq = vm:SelectWeightedSequence(ACT_SHOTGUN_RELOAD_FINISH)
+				vm:SendViewModelMatchingSequence(seq)
+			end
+			
+			-- try to prevent skipping the pumping animation
+			self:StartReloadTimer()
+		
+			return
+		else
+			-- play animation WITHOUT blocking Think()
+			if IsValid(vm) then
+				local seq = vm:SelectWeightedSequence(self.ReloadAnim)
+				vm:SendViewModelMatchingSequence(seq)
+			end
+
+			-- schedule next shell insert based on the animation
+			self:StartReloadTimer()
+
+			return
+		end
+    end
+
+    -- magazine reload
+    local missing = clipMax - clip
     local toLoad = math.min(missing, reserve)
 
-    -- fill the magazine
     self:SetClip1(clip + toLoad)
-
-    -- subtract from reserve
     owner:RemoveAmmo(toLoad, self.Primary.Ammo)
 end
 
@@ -229,7 +269,7 @@ function SWEP:StartReloadTimer()
 	
 	self._reloaded = false
 
-    local seq = vm:SelectWeightedSequence(self.ReloadAnim)
+    local seq = vm:SelectWeightedSequence(self.ReloadAnim) or vm:SelectWeightedSequence(ACT_SHOTGUN_RELOAD_FINISH)
     if not seq or seq < 0 then
         self.ReloadEndTime = CurTime() + 1
         return
@@ -243,6 +283,12 @@ function SWEP:StartReloadTimer()
 end
 
 function SWEP:isCurrentlyReloading()
+    -- if a reload step is in progress, block firing
+    if self.ShotgunReload and self._reloaded == false then
+        return true
+    end
+
+    -- if a reload animation timer is active, block firing
     return self.ReloadEndTime and CurTime() < self.ReloadEndTime
 end
 
@@ -330,6 +376,7 @@ function SWEP:Think()
 	
 	-- custom reload that does not block think entirely
 	if SERVER and self.ReloadEndTime and CurTime() >= self.ReloadEndTime then
+		-- finish the reload when time passes
 		self:FinishReload()
 	end
 	
@@ -404,7 +451,11 @@ if CLIENT then
 		
 		-- custom aim down sights
 		if self.ADS_Progress and self.ADS_Progress > 0 then
-			pos = pos - ang:Right() * self.IronSightsPos.x * self.ADS_Progress
+			local flipModifier = 1
+			if self.ViewModelFlip then
+				flipModifier = -1
+			end
+			pos = pos - ang:Right() * self.IronSightsPos.x * self.ADS_Progress * flipModifier
 			pos = pos - ang:Forward() * self.IronSightsPos.y * self.ADS_Progress
 			pos = pos - ang:Up() * self.IronSightsPos.z * self.ADS_Progress
 			ang:RotateAroundAxis(ang:Right(), self.IronSightsAng.p * self.ADS_Progress)

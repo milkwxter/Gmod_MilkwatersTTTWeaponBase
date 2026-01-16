@@ -13,10 +13,10 @@ SWEP.AutoSpawnable = true
 SWEP.AllowDrop = true
 
 -- Models
-SWEP.ViewModel = "models/weapons/cstrike/c_rif_ak47.mdl"
+SWEP.ViewModel = "models/weapons/v_rif_ak47.mdl"
 SWEP.WorldModel = "models/weapons/w_rif_ak47.mdl"
 SWEP.UseHands = true
-SWEP.ViewModelFlip = false
+SWEP.ViewModelFlip = true
 
 -- Primary stats
 SWEP.Primary.Sound = Sound( "Weapon_AK47.Single" )
