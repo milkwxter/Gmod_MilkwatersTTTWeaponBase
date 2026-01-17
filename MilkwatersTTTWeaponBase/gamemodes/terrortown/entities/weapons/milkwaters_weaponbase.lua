@@ -103,19 +103,20 @@ function SWEP:PrimaryAttack(worldsnd)
 	local owner = self:GetOwner()
 	if not IsValid(owner) then return end
 	
-	-- cancel shotgun reload immediately
-	if self.ShotgunReload and self._reloaded == false then
+	-- cancel shotgun reload if we are actually firing a shot
+	if self.ShotgunReload and self._reloaded == false and self:Clip1() > 0 then
 		self._reloaded = true
 		self.ReloadEndTime = nil
+		return
 	end
 	
 	-- no ammo?
 	if self:CanPrimaryAttack() == false then
 		-- dont play sound if reloading
-		if self:isCurrentlyReloading() then return end
+		if not self:isCurrentlyReloading() then
+			self:EmitSound("Weapon_Pistol.Empty")
+		end
 		
-		-- play a sound to signal empty gun
-		self:EmitSound("Weapon_Pistol.Empty")
 		self:SetNextPrimaryFire(CurTime() + 0.2)
 		return
 	end
@@ -555,7 +556,7 @@ if CLIENT then
 		local innerRadius = 50
 		local outerRadius = innerRadius + tickLength
 		
-		local arcSize = 130
+		local arcSize = 120
 
 		-- center the arc around 0°
 		local arcStart = -arcSize * 0.5
