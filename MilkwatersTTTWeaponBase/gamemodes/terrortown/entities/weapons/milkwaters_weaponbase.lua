@@ -23,6 +23,8 @@ SWEP.IsSilent = false
 
 function SWEP:SetupDataTables()
     self:NetworkVar("Bool", 0, "Ironsights")
+	self:NetworkVar("Bool", 1, "Reloading")
+	self:NetworkVar("Float", 2, "ReloadEndTime")
 end
 
 SWEP.Base = "weapon_base"
@@ -56,6 +58,8 @@ SWEP.Secondary.Ammo         = "none"
 SWEP.Secondary.ClipMax      = -1
 
 SWEP.ShotgunReload = false
+SWEP.ReloadTimer = 0
+SWEP.PendingShells = 0
 
 SWEP.ADS_FOV = 70
 SWEP.ADS_Time = 0.18
@@ -87,14 +91,31 @@ SWEP.RecoilPattern = {
 -- visual effects dont touch
 SWEP.VignetteStrength = SWEP.VignetteStrength or 0
 
+-- helper function for my timers
+local function TimerName(self, id)
+    return "mw_wep_" .. tostring(self:EntIndex()) .. "_" .. id
+end
+
+-- are we allowed to attack
 function SWEP:CanPrimaryAttack()
-	if not IsValid(self:GetOwner()) then return end
+    local owner = self:GetOwner()
+    if not IsValid(owner) then return false end
 	
-	if self:Clip1() <= 0 then return false end
+    -- no ammo
+    if self:Clip1() <= 0 then return false end
 	
-	if self:isCurrentlyReloading() then return false end
-	
-	return true
+    -- allow cancelling shotgun reload
+    if self.ShotgunReload and self:GetReloading() then
+        return true
+    end
+
+    -- dont allow if we networked reloading
+    local reloadEnd = self:GetReloadEndTime() or 0
+    if CurTime() < reloadEnd then
+        return false
+    end
+
+    return true
 end
 
 -- main shooting function
@@ -103,23 +124,36 @@ function SWEP:PrimaryAttack(worldsnd)
 	local owner = self:GetOwner()
 	if not IsValid(owner) then return end
 	
-	-- cancel shotgun reload if we are actually firing a shot
-	if self.ShotgunReload and self._reloaded == false and self:Clip1() > 0 then
-		self._reloaded = true
-		self.ReloadEndTime = nil
-		return
+    -- cancel only during shell-insert
+	if self.ShotgunReload and self:GetReloading() and IsFirstTimePredicted() then
+		local vm = owner:GetViewModel()
+		if IsValid(vm) then
+			local act = vm:GetSequenceActivity(vm:GetSequence())
+			
+			if act ~= ACT_SHOTGUN_RELOAD_FINISH then
+				self:SetReloading(false)
+				self.PendingShells = 0
+
+				local seq = vm:SelectWeightedSequence(ACT_VM_IDLE)
+				if seq and seq >= 0 then
+					vm:SendViewModelMatchingSequence(seq)
+				end
+			end
+		end
 	end
 	
 	-- no ammo?
 	if self:CanPrimaryAttack() == false then
-		-- dont play sound if reloading
-		if not self:isCurrentlyReloading() then
+		if CLIENT then
 			self:EmitSound("Weapon_Pistol.Empty")
 		end
 		
 		self:SetNextPrimaryFire(CurTime() + 0.2)
 		return
 	end
+	
+	-- lol
+	if not IsFirstTimePredicted() then return end
 	
 	-- timing
 	self:SetNextPrimaryFire(CurTime() + self.Primary.Delay)
@@ -148,7 +182,7 @@ function SWEP:PrimaryAttack(worldsnd)
 end
 
 function SWEP:SecondaryAttack()
-	if self:isCurrentlyReloading() then return end
+	if self:GetReloading() then return end
 	
 	local ironsightsState = self:GetIronsights()
 	self:SetIronsights(not ironsightsState)
@@ -178,127 +212,161 @@ function SWEP:SetZoom(state)
 end
 
 function SWEP:Reload()
-    local owner = self:GetOwner()
-    if not IsValid(owner) then return end
-
-    if self:Clip1() >= self.Primary.ClipSize then return end
-    if self:isCurrentlyReloading() then return end
-	if owner:GetAmmoCount(self.Primary.Ammo) == 0 then return end
+	-- bruh
+	if not IsValid(self) then return end
+	if not IsValid(self:GetOwner()) then return end
 	
-	-- stop aiming down sights
+	-- if full clip or no ammo, no reload
+	if self:Clip1() >= self.Primary.ClipSize then return end
+	if self:GetOwner():GetAmmoCount(self.Primary.Ammo) <= 0 then return end
+	
+	-- if already reloading, no reload
+	if self:GetReloading() then return end
+	if not IsFirstTimePredicted() then return end
+	
+	-- stop aiming
 	self:SetIronsights(false)
 	self:SetZoom(false)
 	
-	-- reset recoil pattern
-	self.RecoilStep = 1
-	
-    -- start reload timer
-    self:StartReloadTimer()
+    -- normal magazine reload
+    if not self.ShotgunReload then
+		-- tell player im reloading
+		self:SetReloading(true)
+		
+        self:SendWeaponAnim(ACT_VM_RELOAD)
+        self:GetOwner():SetAnimation(PLAYER_RELOAD)
 
-    -- play animation WITHOUT blocking Think()
-    local vm = owner:GetViewModel()
-    if IsValid(vm) then
-        local seq = vm:SelectWeightedSequence(self.ReloadAnim)
-        vm:SendViewModelMatchingSequence(seq)
+        local dur = self:SequenceDuration()
+        self:SetNextPrimaryFire(CurTime() + dur)
+
+        local tname = TimerName(self, "mag_reload")
+		timer.Create(tname, dur, 1, function()
+			if not IsValid(self) then return end
+			if self.Holstered then return end
+			local owner = self:GetOwner()
+			if not IsValid(owner) then return end
+
+			local missing = self.Primary.ClipSize - self:Clip1()
+			local toLoad = math.min(missing, owner:GetAmmoCount(self.Primary.Ammo))
+
+			if toLoad > 0 then
+				self:SetClip1(self:Clip1() + toLoad)
+				owner:RemoveAmmo(toLoad, self.Primary.Ammo)
+			end
+
+			self:SetReloading(false)
+		end)
+
+        return
     end
+
+    -- shotgun reload
+    if self:Clip1() < self.Primary.ClipSize
+        and self:GetOwner():GetAmmoCount(self.Primary.Ammo) > 0
+    then
+        self:StartReload()
+    end
+end
+
+function SWEP:StartReload()
+    self:SetReloading(true)
+    self.ReloadTimer = CurTime() + self:SequenceDuration()
+	self:SetReloadEndTime(self.ReloadTimer)
+	
+	-- stop aiming
+	self:SetIronsights(false)
+	self:SetZoom(false)
+
+    self:SendWeaponAnim(ACT_SHOTGUN_RELOAD_START)
+    self:GetOwner():SetAnimation(PLAYER_RELOAD)
 
     return true
 end
 
-function SWEP:FinishReload()
-    if self._reloaded then return end
-
-	-- only mark reloaded for normal reload
-	if not self.ShotgunReload then
-		self._reloaded = true
-	end
-
+function SWEP:PerformReload()
     local owner = self:GetOwner()
     if not IsValid(owner) then return end
 
-    local clipMax = self.Primary.ClipSize
-    local clip = self:Clip1()
-    local reserve = owner:GetAmmoCount(self.Primary.Ammo)
-
-    if reserve <= 0 then return end
-    if clip >= clipMax then return end
-
-    if self.ShotgunReload then
-		-- get viewmodel
-		local vm = owner:GetViewModel()
-		
-        -- load a shell
-        self:SetClip1(clip + 1)
-        owner:RemoveAmmo(1, self.Primary.Ammo)
-		
-		-- check if full or no more ammo in reserve
-		if clip + 1 == clipMax or reserve - 1 == 0 then
-			-- finish reload animation
-			if IsValid(vm) then
-				local seq = vm:SelectWeightedSequence(ACT_SHOTGUN_RELOAD_FINISH)
-				vm:SendViewModelMatchingSequence(seq)
-			end
-			
-			-- try to prevent skipping the pumping animation
-			self:StartReloadTimer()
-		
-			return
-		else
-			-- play animation WITHOUT blocking Think()
-			if IsValid(vm) then
-				local seq = vm:SelectWeightedSequence(self.ReloadAnim)
-				vm:SendViewModelMatchingSequence(seq)
-			end
-
-			-- schedule next shell insert based on the animation
-			self:StartReloadTimer()
-
-			return
-		end
-    end
-
-    -- magazine reload
-    local missing = clipMax - clip
-    local toLoad = math.min(missing, reserve)
-
-    self:SetClip1(clip + toLoad)
-    owner:RemoveAmmo(toLoad, self.Primary.Ammo)
-end
-
-function SWEP:StartReloadTimer()
-    local owner = self:GetOwner()
-    if not IsValid(owner) then return end
-
-    local vm = owner:GetViewModel()
-    if not IsValid(vm) then return end
-	
-	self._reloaded = false
-
-    local seq = vm:SelectWeightedSequence(self.ReloadAnim) or vm:SelectWeightedSequence(ACT_SHOTGUN_RELOAD_FINISH)
-    if not seq or seq < 0 then
-        self.ReloadEndTime = CurTime() + 1
+    -- no reserve ammo?
+    if owner:GetAmmoCount(self.Primary.Ammo) <= 0 then
+        self:FinishReload()
         return
     end
 
-    local rate = vm:GetPlaybackRate()
-    if not rate or rate <= 0 then rate = 1 end
-
-    local dur = vm:SequenceDuration(seq) / rate
-    self.ReloadEndTime = CurTime() + dur
-end
-
-function SWEP:isCurrentlyReloading()
-    -- if a reload step is in progress, block firing
-    if self.ShotgunReload and self._reloaded == false then
-        return true
+    -- already full?
+    if (self:Clip1() + self.PendingShells) >= self.Primary.ClipSize then
+        self:FinishReload()
+        return
     end
 
-    -- if a reload animation timer is active, block firing
-    return self.ReloadEndTime and CurTime() < self.ReloadEndTime
+    -- play insert animation
+    self:SendWeaponAnim(ACT_VM_RELOAD)
+
+    local dur = self:SequenceDuration()
+    self.ReloadTimer = CurTime() + dur
+	self:SetReloadEndTime(self.ReloadTimer)
+
+    -- reserve shell immediately so think doesn't double-trigger
+    self.PendingShells = self.PendingShells + 1
+	
+    -- add the shell after the animation finishes
+	local animationMalus = 0.3
+    local tname = TimerName(self, "insert_shell")
+	timer.Create(tname, math.max(0, dur - animationMalus), 1, function()
+		if not IsValid(self) then return end
+		if self.Holstered then return end
+		local o = self:GetOwner()
+		if not IsValid(o) then return end
+
+		if self.PendingShells <= 0 then return end
+		if self:Clip1() >= self.Primary.ClipSize then
+			self.PendingShells = 0
+			self:FinishReload()
+			return
+		end
+
+		self:SetClip1(self:Clip1() + 1)
+		self.PendingShells = self.PendingShells - 1
+		o:RemoveAmmo(1, self.Primary.Ammo)
+	end)
 end
 
-function SWEP:GetHeadshotMultiplier(victim, dmginfo)
-   return self.HeadshotMultiplier
+function SWEP:FinishReload()
+    local owner = self:GetOwner()
+    if not IsValid(owner) then return end
+
+    -- Try to get a reliable viewmodel duration; fall back to SequenceDuration()
+    local dur = 0
+    local vm = owner:GetViewModel()
+    if IsValid(vm) then
+        local seq = vm:SelectWeightedSequence(ACT_SHOTGUN_RELOAD_FINISH)
+        if seq and seq >= 0 then
+            vm:SendViewModelMatchingSequence(seq)
+            local rate = vm:GetPlaybackRate() or 1
+            dur = vm:SequenceDuration(seq) / rate
+        end
+    end
+	
+	self.ReloadTimer = CurTime() + dur
+	self:SetReloadEndTime(self.ReloadTimer)
+    self:SetReloading(false)
+
+    -- flush pending shells AFTER the finish animation completes
+    local tname = TimerName(self, "finish_flush")
+	timer.Create(tname, dur, 1, function()
+		if not IsValid(self) then return end
+		if self.Holstered then return end
+		local o = self:GetOwner()
+		if not IsValid(o) then return end
+
+		if self.PendingShells > 0 then
+			local canAdd = math.min(self.PendingShells, self.Primary.ClipSize - self:Clip1())
+			if canAdd > 0 then
+				self:SetClip1(self:Clip1() + canAdd)
+				self.PendingShells = self.PendingShells - canAdd
+			end
+		end
+	end)
 end
 
 function SWEP:DoRecoil()
@@ -380,15 +448,22 @@ function SWEP:Think()
     if not IsValid(owner) then return end
 	
 	-- custom reload that does not block think entirely
-	if SERVER and self.ReloadEndTime and CurTime() >= self.ReloadEndTime then
-		-- finish the reload when time passes
-		self:FinishReload()
+	if SERVER and self.ShotgunReload and self:GetReloading() and IsFirstTimePredicted() then
+        if CurTime() >= self.ReloadTimer then
+            if self:Clip1() < self.Primary.ClipSize and self:GetOwner():GetAmmoCount(self.Primary.Ammo) > 0 then
+                self:PerformReload()
+            else
+                self:FinishReload()
+            end
+        end
 	end
 	
 	-- custom aim down sights lerp
-	local aiming = self:GetIronsights()
-	local target = aiming and 1 or 0
-	self.ADS_Progress = Lerp(FrameTime() * (1 / self.ADS_Time), self.ADS_Progress or 0, target)
+	if not self:GetReloading() then
+		local aiming = self:GetIronsights()
+		local target = aiming and 1 or 0
+		self.ADS_Progress = Lerp(FrameTime() * (1 / self.ADS_Time), self.ADS_Progress or 0, target)
+	end
 	
 	-- make camera recoil slowly return to 0
 	if CLIENT then
@@ -432,8 +507,26 @@ function SWEP:Holster(weapon)
 	self:SetIronsights(false)
 	self:SetZoom(false)
 	
+	-- cancel reload state
+	self:SetReloading(false)
+	self.PendingShells = 0
+	self.ReloadTimer = 0
+	if self.SetReloadEndTime then
+		self:SetReloadEndTime(0)
+	end
+	
+	-- remove any timers created for this weapon
+	local base = "mw_wep_" .. tostring(self:EntIndex()) .. "_"
+	timer.Remove(base .. "mag_reload")
+	timer.Remove(base .. "insert_shell")
+	timer.Remove(base .. "finish_flush")
+	
 	-- actually holster
 	return true
+end
+
+function SWEP:GetHeadshotMultiplier(victim, dmginfo)
+	return self.HeadshotMultiplier
 end
 
 if CLIENT then
@@ -445,8 +538,8 @@ if CLIENT then
 		pos = pos - ang:Forward() * kick * 0.5
 		pos = pos + ang:Up() * kick * 0.1
 		
-		 -- mirror if possible
-		if IsValid(self:GetOwner()) and self:GetOwner():IsPlayer() and ent == self:GetOwner():GetViewModel() and self.ViewModelFlip then
+		-- mirror if possible
+		if IsValid(self:GetOwner()) and self:GetOwner():IsPlayer() and vm == self:GetOwner():GetViewModel() and self.ViewModelFlip then
 			ang.r = -ang.r
 		end
 
