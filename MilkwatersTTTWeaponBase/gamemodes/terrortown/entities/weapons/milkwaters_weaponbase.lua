@@ -207,7 +207,11 @@ end
 
 function SWEP:FinishReload()
     if self._reloaded then return end
-    self._reloaded = true
+
+	-- only mark reloaded for normal reload
+	if not self.ShotgunReload then
+		self._reloaded = true
+	end
 
     local owner = self:GetOwner()
     if not IsValid(owner) then return end
