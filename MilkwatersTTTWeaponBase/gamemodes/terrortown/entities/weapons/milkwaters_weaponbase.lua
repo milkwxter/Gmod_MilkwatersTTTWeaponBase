@@ -96,6 +96,11 @@ local function TimerName(self, id)
     return "mw_wep_" .. tostring(self:EntIndex()) .. "_" .. id
 end
 
+-- set the hold type
+function SWEP:Initialize()
+	if self.SetWeaponHoldType then self:SetWeaponHoldType(self.HoldType or "pistol") end
+end
+
 -- are we allowed to attack
 function SWEP:CanPrimaryAttack()
     local owner = self:GetOwner()
@@ -178,6 +183,7 @@ function SWEP:PrimaryAttack(worldsnd)
 	end
 	
 	-- sfx cus its cool
+	owner:SetAnimation(PLAYER_ATTACK1)
 	self.VignetteStrength = math.min(self.VignetteStrength + 0.1, 1)
 end
 
@@ -328,6 +334,9 @@ function SWEP:PerformReload()
 		self:SetClip1(self:Clip1() + 1)
 		self.PendingShells = self.PendingShells - 1
 		o:RemoveAmmo(1, self.Primary.Ammo)
+		if SERVER then
+			o:DoAnimationEvent(ACT_HL2MP_GESTURE_RELOAD_PISTOL)
+		end
 	end)
 end
 
@@ -335,7 +344,7 @@ function SWEP:FinishReload()
     local owner = self:GetOwner()
     if not IsValid(owner) then return end
 
-    -- Try to get a reliable viewmodel duration; fall back to SequenceDuration()
+    -- make reload timer based on final pumping animation ending
     local dur = 0
     local vm = owner:GetViewModel()
     if IsValid(vm) then
@@ -351,7 +360,7 @@ function SWEP:FinishReload()
 	self:SetReloadEndTime(self.ReloadTimer)
     self:SetReloading(false)
 
-    -- flush pending shells AFTER the finish animation completes
+    -- flush pending shells after animation is done
     local tname = TimerName(self, "finish_flush")
 	timer.Create(tname, dur, 1, function()
 		if not IsValid(self) then return end

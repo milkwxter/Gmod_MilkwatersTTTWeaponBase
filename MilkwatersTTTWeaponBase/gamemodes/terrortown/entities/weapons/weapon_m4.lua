@@ -1,18 +1,19 @@
 AddCSLuaFile()
 
 SWEP.Base = "milkwaters_weaponbase"
-SWEP.PrintName = "M4"
+SWEP.PrintName = "M4A1"
 SWEP.Category = "TTT2 Weapons"
 
 SWEP.Spawnable = true
 SWEP.AdminSpawnable = true
 
 -- TTT2 metadata
-SWEP.Kind = WEAPON_PISTOL
+SWEP.Kind = WEAPON_HEAVY
 SWEP.AutoSpawnable = true
 SWEP.AllowDrop = true
 
 -- Models
+SWEP.HoldType = "ar2"
 SWEP.ViewModel = "models/weapons/v_rif_m4a1.mdl"
 SWEP.WorldModel = "models/weapons/w_rif_m4a1.mdl"
 SWEP.UseHands = true
