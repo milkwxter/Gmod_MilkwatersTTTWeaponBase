@@ -24,7 +24,8 @@ SWEP.IsSilent = false
 function SWEP:SetupDataTables()
     self:NetworkVar("Bool", 0, "Ironsights")
 	self:NetworkVar("Bool", 1, "Reloading")
-	self:NetworkVar("Float", 2, "ReloadEndTime")
+	self:NetworkVar("Float", 2, "ReloadStartTime")
+	self:NetworkVar("Float", 3, "ReloadEndTime")
 end
 
 SWEP.Base = "weapon_base"
@@ -71,6 +72,7 @@ SWEP.IronSightsPos = SWEP.ADS_Pos
 SWEP.IronSightsAng = SWEP.ADS_Ang
 
 SWEP.HeadshotMultiplier = 2
+SWEP.IsSilent = false
 
 SWEP.StoredAmmo = 0
 
@@ -242,8 +244,11 @@ function SWEP:Reload()
         self:SendWeaponAnim(ACT_VM_RELOAD)
         self:GetOwner():SetAnimation(PLAYER_RELOAD)
 
+		local now = CurTime()
         local dur = self:SequenceDuration()
-        self:SetNextPrimaryFire(CurTime() + dur)
+		self:SetReloadStartTime(now)
+		self:SetReloadEndTime(now + dur)
+        self:SetNextPrimaryFire(now + dur)
 
         local tname = TimerName(self, "mag_reload")
 		timer.Create(tname, dur, 1, function()
@@ -276,12 +281,17 @@ end
 
 function SWEP:StartReload()
     self:SetReloading(true)
-    self.ReloadTimer = CurTime() + self:SequenceDuration()
-	self:SetReloadEndTime(self.ReloadTimer)
-	
-	-- stop aiming
-	self:SetIronsights(false)
-	self:SetZoom(false)
+
+    local now = CurTime()
+    local dur = self:SequenceDuration()
+
+    self.ReloadTimer = now + dur
+    self:SetReloadStartTime(now)
+    self:SetReloadEndTime(now + dur)
+
+	-- reset irons
+    self:SetIronsights(false)
+    self:SetZoom(false)
 
     self:SendWeaponAnim(ACT_SHOTGUN_RELOAD_START)
     self:GetOwner():SetAnimation(PLAYER_RELOAD)
@@ -308,15 +318,18 @@ function SWEP:PerformReload()
     -- play insert animation
     self:SendWeaponAnim(ACT_VM_RELOAD)
 
-    local dur = self:SequenceDuration()
-    self.ReloadTimer = CurTime() + dur
-	self:SetReloadEndTime(self.ReloadTimer)
+	local now = CurTime()
+	local dur = self:SequenceDuration()
+	local animationMalus = 0.3
+	
+    self.ReloadTimer = now + dur
+	self:SetReloadStartTime(now)
+	self:SetReloadEndTime(now + dur)
 
-    -- reserve shell immediately so think doesn't double-trigger
+    -- reserve shell immediately so think doesn't double trigger
     self.PendingShells = self.PendingShells + 1
 	
     -- add the shell after the animation finishes
-	local animationMalus = 0.3
     local tname = TimerName(self, "insert_shell")
 	timer.Create(tname, math.max(0, dur - animationMalus), 1, function()
 		if not IsValid(self) then return end
@@ -334,6 +347,7 @@ function SWEP:PerformReload()
 		self:SetClip1(self:Clip1() + 1)
 		self.PendingShells = self.PendingShells - 1
 		o:RemoveAmmo(1, self.Primary.Ammo)
+		
 		if SERVER then
 			o:DoAnimationEvent(ACT_HL2MP_GESTURE_RELOAD_PISTOL)
 		end
@@ -437,6 +451,9 @@ function SWEP:ShootBullet(dmg, numbul, cone)
 	
 	-- most muzzle attachments are named 1
 	local muzzleAttachment = "1"
+	
+	-- check if we should have a tracer
+	local silentGun = self.IsSilent
 
     -- normal bullet
     local bullet = {}
@@ -444,7 +461,7 @@ function SWEP:ShootBullet(dmg, numbul, cone)
     bullet.Src    = owner:GetShootPos()
     bullet.Dir    = dir
     bullet.Spread = Vector(cone, cone, 0)
-    bullet.Tracer = 1
+    bullet.Tracer = silentGun and 0 or 1
 	bullet.TracerName = "milkwater_tracer"
     bullet.Force  = dmg * 0.5
     bullet.Damage = dmg
@@ -516,23 +533,44 @@ function SWEP:Holster(weapon)
 	self:SetIronsights(false)
 	self:SetZoom(false)
 	
-	-- cancel reload state
-	self:SetReloading(false)
-	self.PendingShells = 0
-	self.ReloadTimer = 0
-	if self.SetReloadEndTime then
-		self:SetReloadEndTime(0)
-	end
-	
-	-- remove any timers created for this weapon
-	local base = "mw_wep_" .. tostring(self:EntIndex()) .. "_"
-	timer.Remove(base .. "mag_reload")
-	timer.Remove(base .. "insert_shell")
-	timer.Remove(base .. "finish_flush")
+	-- cancel reload states
+	self:CancelAllTimers()
 	
 	-- actually holster
 	return true
 end
+
+function SWEP:OwnerChanged()
+    -- if owner is gone or dead clean up timers
+    local owner = self:GetOwner()
+    if not IsValid(owner) or not owner:Alive() then
+        self:CancelAllTimers()
+    end
+end
+
+function SWEP:OnRemove()
+    -- clean up if the weapon entity itself is removed
+    self:CancelAllTimers()
+end
+
+function SWEP:CancelAllTimers()
+    local base = "mw_wep_" .. tostring(self:EntIndex()) .. "_"
+    timer.Remove(base .. "mag_reload")
+    timer.Remove(base .. "insert_shell")
+    timer.Remove(base .. "finish_flush")
+
+    -- reset states
+    self:SetReloading(false)
+    self.PendingShells = 0
+    self.ReloadTimer = 0
+    if self.SetReloadStartTimeTime then
+        self:SetReloadStartTimeTime(0)
+    end
+    if self.SetReloadEndTime then
+        self:SetReloadEndTime(0)
+    end
+end
+
 
 function SWEP:GetHeadshotMultiplier(victim, dmginfo)
 	return self.HeadshotMultiplier
@@ -581,7 +619,11 @@ if CLIENT then
 		local y = ScrH() * 0.5
 
 		-- draw crosshair
-		self:DrawCrosshairHUD(x, y)
+		if self:GetReloading() then
+			self:DrawReloadCircle(x, y)
+		else
+			self:DrawCrosshairHUD(x, y)
+		end
 
 		-- draw ammo arc
 		self:DrawAmmoArc(x + 50, y)
@@ -783,6 +825,59 @@ if CLIENT then
 			if repeating then
 				draw.SimpleText("REPEATING", "DermaDefaultBold", cx + 10, cy - 10, Color(255, 100, 100, 255), TEXT_ALIGN_LEFT, TEXT_ALIGN_CENTER)
 			end
+		end
+	end
+	
+	function SWEP:GetReloadProgress()
+		if not self:GetReloading() then return 0 end
+
+		local start = self:GetReloadStartTime() or 0
+		local finish = self:GetReloadEndTime() or 0
+		local now = CurTime()
+
+		if start <= 0 or finish <= start then return 0 end
+		if now >= finish then return 1 end
+
+		return math.Clamp((now - start) / (finish - start), 0, 1)
+	end
+
+	function SWEP:DrawReloadCircle(x, y)
+		local prog = self:GetReloadProgress()
+		if prog <= 0 then return end
+
+		local radius = 20
+		local thickness = 20
+		local segments = 64
+
+		surface.SetDrawColor(255, 255, 255, 220)
+		draw.NoTexture()
+
+		local startAng = -90
+		local endAng = startAng + (prog * 360)
+
+		for i = 0, segments - 1 do
+			local t0 = i / segments
+			local t1 = (i + 1) / segments
+
+			local a0 = math.rad(startAng + t0 * (endAng - startAng))
+			local a1 = math.rad(startAng + t1 * (endAng - startAng))
+
+			local ox0 = x + math.cos(a0) * radius
+			local oy0 = y + math.sin(a0) * radius
+			local ox1 = x + math.cos(a1) * radius
+			local oy1 = y + math.sin(a1) * radius
+
+			local ix0 = x + math.cos(a0) * (radius - thickness)
+			local iy0 = y + math.sin(a0) * (radius - thickness)
+			local ix1 = x + math.cos(a1) * (radius - thickness)
+			local iy1 = y + math.sin(a1) * (radius - thickness)
+
+			surface.DrawPoly({
+				{ x = ox0, y = oy0 },
+				{ x = ox1, y = oy1 },
+				{ x = ix1, y = iy1 },
+				{ x = ix0, y = iy0 },
+			})
 		end
 	end
 	
