@@ -1,5 +1,9 @@
 AddCSLuaFile()
-resource.AddFile("materials/vgui/milk_vignette.vmt")
+
+if SERVER then
+    resource.AddFile("materials/vgui/milk_vignette.vmt")
+end
+
 
 SWEP.Kind = WEAPON_NONE
 SWEP.CanBuy = nil
@@ -176,8 +180,8 @@ function SWEP:PrimaryAttack(worldsnd)
 	end
 	
 	-- shoot bullet
-	cone = self.Primary.Cone
-	self:ShootBullet( self.Primary.Damage, self.Primary.NumShots, cone )
+	local cone = self.Primary.Cone
+	self:ShootBullet(self.Primary.Damage, self.Primary.NumShots, cone)
 	
 	-- do recoil under super specific circumstances
 	if SERVER and game.SinglePlayer() or CLIENT and not game.SinglePlayer() and IsFirstTimePredicted() then
@@ -449,9 +453,6 @@ function SWEP:ShootBullet(dmg, numbul, cone)
     local ang = owner:EyeAngles() + owner:GetViewPunchAngles()
     local dir = ang:Forward()
 	
-	-- most muzzle attachments are named 1
-	local muzzleAttachment = "1"
-	
 	-- check if we should have a tracer
 	local silentGun = self.IsSilent
 
@@ -474,7 +475,7 @@ function SWEP:Think()
     if not IsValid(owner) then return end
 	
 	-- custom reload that does not block think entirely
-	if SERVER and self.ShotgunReload and self:GetReloading() and IsFirstTimePredicted() then
+	if SERVER and self.ShotgunReload and self:GetReloading() then
         if CurTime() >= self.ReloadTimer then
             if self:Clip1() < self.Primary.ClipSize and self:GetOwner():GetAmmoCount(self.Primary.Ammo) > 0 then
                 self:PerformReload()
@@ -511,20 +512,23 @@ function SWEP:Think()
 end
 
 function SWEP:Deploy()
-    local vm = self.Owner:GetViewModel()
-    if IsValid(vm) then
-		local seq = vm:SelectWeightedSequence(ACT_VM_DRAW)
-        vm:SendViewModelMatchingSequence(seq)
-		-- get length of deploy sequence
-		if seq and seq >= 0 then
-			local rate = vm:GetPlaybackRate()
-			if not rate or rate <= 0 then rate = 1 end
-			dur = vm:SequenceDuration(seq) / rate
-		end
-    end
-	
-	self:SetNextPrimaryFire(CurTime() + dur)
+    local owner = self:GetOwner()
+    local dur = 0
 
+    if IsValid(owner) then
+        local vm = owner:GetViewModel()
+        if IsValid(vm) then
+            local seq = vm:SelectWeightedSequence(ACT_VM_DRAW)
+            if seq and seq >= 0 then
+                vm:SendViewModelMatchingSequence(seq)
+                local rate = vm:GetPlaybackRate()
+                if not rate or rate <= 0 then rate = 1 end
+                dur = vm:SequenceDuration(seq) / rate
+            end
+        end
+    end
+
+    self:SetNextPrimaryFire(CurTime() + dur)
     return true
 end
 
@@ -563,8 +567,8 @@ function SWEP:CancelAllTimers()
     self:SetReloading(false)
     self.PendingShells = 0
     self.ReloadTimer = 0
-    if self.SetReloadStartTimeTime then
-        self:SetReloadStartTimeTime(0)
+    if self.SetReloadStartTime then
+        self:SetReloadStartTime(0)
     end
     if self.SetReloadEndTime then
         self:SetReloadEndTime(0)
