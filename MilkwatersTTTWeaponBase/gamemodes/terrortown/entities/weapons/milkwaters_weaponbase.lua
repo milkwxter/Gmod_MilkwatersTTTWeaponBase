@@ -218,6 +218,8 @@ function SWEP:ShootBullet(dmg, numbul, cone)
 	bullet.TracerName = "milkwater_tracer"
     bullet.Force  = dmg * 0.5
     bullet.Damage = dmg
+	bullet.Attacker = self:GetOwner()
+	bullet.Inflictor = self
 
     owner:FireBullets(bullet, true)
 end
@@ -263,7 +265,7 @@ function SWEP:Reload()
 	
 	-- if already reloading, no reload
 	if self:GetReloading() then return end
-	if not IsFirstTimePredicted() then return end
+	if CLIENT and not IsFirstTimePredicted() then return end
 	
 	-- stop aiming
 	self:SetIronsights(false)
