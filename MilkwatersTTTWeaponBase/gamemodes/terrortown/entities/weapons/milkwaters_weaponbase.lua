@@ -112,6 +112,9 @@ function SWEP:CanPrimaryAttack()
     local owner = self:GetOwner()
     if not IsValid(owner) then return false end
 	
+	-- lol
+	if CLIENT and not IsFirstTimePredicted() then return end
+	
     -- no ammo
     if self:Clip1() <= 0 then return false end
 	
@@ -163,9 +166,6 @@ function SWEP:PrimaryAttack(worldsnd)
 		return
 	end
 	
-	-- lol
-	if not IsFirstTimePredicted() then return end
-	
 	-- timing
 	self:SetNextPrimaryFire(CurTime() + self.Primary.Delay)
 	
@@ -191,6 +191,35 @@ function SWEP:PrimaryAttack(worldsnd)
 	-- sfx cus its cool
 	owner:SetAnimation(PLAYER_ATTACK1)
 	self.VignetteStrength = math.min(self.VignetteStrength + 0.1, 1)
+end
+
+function SWEP:ShootBullet(dmg, numbul, cone)
+    local owner = self:GetOwner()
+    if not IsValid(owner) then return end
+	
+	if CLIENT and not IsFirstTimePredicted() then return end
+
+    self:SendWeaponAnim(self.PrimaryAnim)
+
+    -- recoil modified aim
+    local ang = owner:EyeAngles() + owner:GetViewPunchAngles()
+    local dir = ang:Forward()
+	
+	-- check if we should have a tracer
+	local silentGun = self.IsSilent
+
+    -- normal bullet
+    local bullet = {}
+    bullet.Num    = numbul
+    bullet.Src    = owner:GetShootPos()
+    bullet.Dir    = dir
+    bullet.Spread = Vector(cone, cone, 0)
+    bullet.Tracer = silentGun and 0 or 1
+	bullet.TracerName = "milkwater_tracer"
+    bullet.Force  = dmg * 0.5
+    bullet.Damage = dmg
+
+    owner:FireBullets(bullet, true)
 end
 
 function SWEP:SecondaryAttack()
@@ -441,33 +470,6 @@ function SWEP:DoRecoil()
 
 	self.RecoilStep = self.RecoilStep + 1
 	return
-end
-
-function SWEP:ShootBullet(dmg, numbul, cone)
-    local owner = self:GetOwner()
-    if not IsValid(owner) then return end
-
-    self:SendWeaponAnim(self.PrimaryAnim)
-
-    -- recoil modified aim
-    local ang = owner:EyeAngles() + owner:GetViewPunchAngles()
-    local dir = ang:Forward()
-	
-	-- check if we should have a tracer
-	local silentGun = self.IsSilent
-
-    -- normal bullet
-    local bullet = {}
-    bullet.Num    = numbul
-    bullet.Src    = owner:GetShootPos()
-    bullet.Dir    = dir
-    bullet.Spread = Vector(cone, cone, 0)
-    bullet.Tracer = silentGun and 0 or 1
-	bullet.TracerName = "milkwater_tracer"
-    bullet.Force  = dmg * 0.5
-    bullet.Damage = dmg
-
-    owner:FireBullets(bullet)
 end
 
 function SWEP:Think()
