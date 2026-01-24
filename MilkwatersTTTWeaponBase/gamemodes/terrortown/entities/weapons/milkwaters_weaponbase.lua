@@ -485,12 +485,15 @@ function SWEP:Think()
         end
 	end
 	
-	-- custom aim down sights lerp
+	-- always lerp ADS progress
+	local target = 0
+
+	-- normal ADS logic
 	if not self:GetReloading() then
-		local aiming = self:GetIronsights()
-		local target = aiming and 1 or 0
-		self.ADS_Progress = Lerp(FrameTime() * (1 / self.ADS_Time), self.ADS_Progress or 0, target)
+		target = self:GetIronsights() and 1 or 0
 	end
+
+	self.ADS_Progress = Lerp(FrameTime() * (1 / self.ADS_Time), self.ADS_Progress or 0, target)
 	
 	-- make camera recoil slowly return to 0
 	if CLIENT then
