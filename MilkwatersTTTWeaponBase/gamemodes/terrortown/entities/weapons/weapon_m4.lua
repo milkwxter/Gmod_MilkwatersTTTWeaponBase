@@ -14,21 +14,21 @@ SWEP.AllowDrop = true
 
 -- Models
 SWEP.HoldType = "ar2"
-SWEP.ViewModel = "models/weapons/v_rif_m4a1.mdl"
-SWEP.WorldModel = "models/weapons/w_rif_m4a1.mdl"
+SWEP.ViewModel = "models/weapons/chands__m4a1_iron.mdl"
+SWEP.WorldModel = "models/weapons/w_m4a1_iron.mdl"
 SWEP.UseHands = true
 SWEP.ViewModelFlip = true
 
 -- Primary stats
-SWEP.Primary.Sound = Sound( "Weapon_M4A1.Single" )
+SWEP.Primary.Sound = Sound( "weapons/dmg_m16a4/shoot.wav" )
 SWEP.Primary.Damage = 27
 SWEP.Primary.NumShots = 1
 SWEP.Primary.Delay = 0.09
 SWEP.Primary.Cone = 0.01
 SWEP.Primary.Recoil = 3
 
-SWEP.Primary.ClipSize = 20
-SWEP.Primary.DefaultClip = 20
+SWEP.Primary.ClipSize = 30
+SWEP.Primary.DefaultClip = 30
 SWEP.Primary.Automatic = true
 
 SWEP.AmmoEnt = "item_ammo_smg1_ttt"

@@ -316,6 +316,9 @@ end
 
 function SWEP:StartReload()
     self:SetReloading(true)
+	
+    self:SendWeaponAnim(ACT_SHOTGUN_RELOAD_START)
+    self:GetOwner():SetAnimation(PLAYER_RELOAD)
 
     local now = CurTime()
     local dur = self:SequenceDuration()
@@ -327,9 +330,6 @@ function SWEP:StartReload()
 	-- reset irons
     self:SetIronsights(false)
     self:SetZoom(false)
-
-    self:SendWeaponAnim(ACT_SHOTGUN_RELOAD_START)
-    self:GetOwner():SetAnimation(PLAYER_RELOAD)
 
     return true
 end
@@ -355,7 +355,7 @@ function SWEP:PerformReload()
 
 	local now = CurTime()
 	local dur = self:SequenceDuration()
-	local animationMalus = 0.3
+	local animationMalus = 0.5
 	
     self.ReloadTimer = now + dur
 	self:SetReloadStartTime(now)
@@ -582,7 +582,6 @@ function SWEP:CancelAllTimers()
     end
 end
 
-
 function SWEP:GetHeadshotMultiplier(victim, dmginfo)
 	return self.HeadshotMultiplier
 end
@@ -621,6 +620,41 @@ if CLIENT then
 
 		return pos, ang
 	end
+	
+	local ammo_types = {
+		["item_ammo_357_ttt"] = true,
+		["item_ammo_pistol_ttt"] = true,
+		["item_ammo_revolver_ttt"] = true,
+		["item_ammo_smg1_ttt"] = true,
+		["item_box_buckshot_ttt"] = true
+	}
+
+	local function IsLookingAtWeaponOrAmmoStats()
+		local client = LocalPlayer()
+		if not IsValid(client) or not client:IsTerror() or not client:Alive() then return false end
+
+		local tr = client:GetEyeTrace()
+		local ent = tr.Entity
+		if not IsValid(ent) then return false end
+
+		-- must be weapon OR ammo box
+		if not ent:IsWeapon() and not ammo_types[ent:GetClass()] then
+			return false
+		end
+
+		-- distance check
+		if tr.HitPos:DistToSqr(client:GetShootPos()) > (100 * 100) then
+			return false
+		end
+
+		-- only weapons need primary table
+		if ent:IsWeapon() and not istable(ent.Primary) then
+			return false
+		end
+
+		return true
+	end
+
 
 	function SWEP:DrawHUD()
 		local owner = LocalPlayer()
@@ -637,7 +671,9 @@ if CLIENT then
 		end
 
 		-- draw ammo arc
-		self:DrawAmmoArc(x + 50, y)
+		if not IsLookingAtWeaponOrAmmoStats() then
+			self:DrawAmmoArc(x + 50, y)
+		end
 		
 		-- draw vignette
 		self:DrawRecoilVignette()

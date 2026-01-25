@@ -14,13 +14,13 @@ SWEP.AllowDrop = true
 
 -- Models
 SWEP.HoldType = "ar2"
-SWEP.ViewModel = "models/weapons/v_rif_ak47.mdl"
-SWEP.WorldModel = "models/weapons/w_rif_ak47.mdl"
+SWEP.ViewModel = "models/weapons/c_arms_ak47.mdl"
+SWEP.WorldModel = "models/weapons/w_ak47_m9k.mdl"
 SWEP.UseHands = true
 SWEP.ViewModelFlip = true
 
 -- Primary stats
-SWEP.Primary.Sound = Sound( "Weapon_AK47.Single" )
+SWEP.Primary.Sound = Sound( "weapons/aykayforty/ak47-1.wav" )
 SWEP.Primary.Damage = 22
 SWEP.Primary.NumShots = 1
 SWEP.Primary.Delay = 0.1
