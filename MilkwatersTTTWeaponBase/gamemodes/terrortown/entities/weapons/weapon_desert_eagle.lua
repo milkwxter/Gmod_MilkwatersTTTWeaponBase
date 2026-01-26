@@ -1,7 +1,7 @@
 AddCSLuaFile()
 
 SWEP.Base = "milkwaters_weaponbase"
-SWEP.PrintName = "M1911"
+SWEP.PrintName = "Desert Eagle"
 SWEP.Category = "TTT2 Weapons"
 
 SWEP.Spawnable = true
@@ -14,28 +14,28 @@ SWEP.AllowDrop = true
 
 -- Models
 SWEP.HoldType = "pistol"
-SWEP.ViewModel = "models/weapons/chands_dmgf_co1911.mdl"
-SWEP.WorldModel = "models/weapons/s_dmgf_co1911.mdl"
+SWEP.ViewModel = "models/weapons/chands_tcom_deagle.mdl"
+SWEP.WorldModel = "models/weapons/w_tcom_deagle.mdl"
 SWEP.UseHands = true
 SWEP.ViewModelFlip = false
 SWEP.ViewModelFOV = 100
 
 -- Primary stats
-SWEP.Primary.Sound = Sound( "weapons/dmg_colt1911/deagle-1.wav" )
-SWEP.Primary.Damage = 34
+SWEP.Primary.Sound = Sound( "weapons/fokku_tc_deagle/deagle-1.wav" )
+SWEP.Primary.Damage = 55
 SWEP.Primary.NumShots = 1
 SWEP.Primary.Delay = 0.2
-SWEP.Primary.Cone = 0.015
-SWEP.Primary.Recoil = 6
+SWEP.Primary.Cone = 0.03
+SWEP.Primary.Recoil = 14
 
-SWEP.Primary.ClipSize = 8
-SWEP.Primary.DefaultClip = 8
+SWEP.Primary.ClipSize = 7
+SWEP.Primary.DefaultClip = 7
 SWEP.Primary.Automatic = true
 
 SWEP.AmmoEnt = "item_ammo_pistol_ttt"
 SWEP.Primary.Ammo = "Pistol"
 
-SWEP.HeadshotMultiplier = 2.0
+SWEP.HeadshotMultiplier = 2.5
 
 SWEP.ShotgunReload = false
 

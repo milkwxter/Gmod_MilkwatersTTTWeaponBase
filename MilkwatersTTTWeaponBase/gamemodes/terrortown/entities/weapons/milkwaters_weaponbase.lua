@@ -67,16 +67,18 @@ SWEP.ReloadTimer = 0
 SWEP.PendingShells = 0
 
 SWEP.ADS_FOV = 70
-SWEP.ADS_Time = 0.18
-SWEP.ADS_RecoilMul = 0.65
-SWEP.ADS_ConeMul   = 0.55
-SWEP.ADS_Pos = Vector(3, 0, 1)
+SWEP.ADS_Time = 0.2
+SWEP.ADS_RecoilMul = 0.5
+SWEP.ADS_Pos = Vector(1, 0, 1)
 SWEP.ADS_Ang = Angle(0, 0, 0)
 SWEP.IronSightsPos = SWEP.ADS_Pos
 SWEP.IronSightsAng = SWEP.ADS_Ang
 
 SWEP.HeadshotMultiplier = 2
 SWEP.IsSilent = false
+
+SWEP.LastAttackTime = 0
+SWEP.FirstShotAccurate = true
 
 SWEP.StoredAmmo = 0
 
@@ -178,10 +180,9 @@ function SWEP:PrimaryAttack(worldsnd)
 	elseif SERVER then
 		sound.Play(self.Primary.Sound, self:GetPos(), self.Primary.SoundLevel)
 	end
-	
+
 	-- shoot bullet
-	local cone = self.Primary.Cone
-	self:ShootBullet(self.Primary.Damage, self.Primary.NumShots, cone)
+	self:ShootBullet(self.Primary.Damage, self.Primary.NumShots, self:GetCurrentCone())
 	
 	-- do recoil under super specific circumstances
 	if SERVER and game.SinglePlayer() or CLIENT and not game.SinglePlayer() and IsFirstTimePredicted() then
@@ -191,7 +192,25 @@ function SWEP:PrimaryAttack(worldsnd)
 	-- sfx cus its cool
 	owner:SetAnimation(PLAYER_ATTACK1)
 	self.VignetteStrength = math.min(self.VignetteStrength + 0.1, 1)
+	
+	-- update last attack time
+	self.LastAttackTime = CurTime()
 end
+
+function SWEP:GetCurrentCone()
+    local cone = self.Primary.Cone
+
+    -- first shot accuracy
+    if self.FirstShotAccurate then
+        local sinceLast = CurTime() - (self.LastAttackTime or 0)
+        if sinceLast > 1 then
+            cone = cone * 0.1
+        end
+    end
+
+    return cone
+end
+
 
 function SWEP:ShootBullet(dmg, numbul, cone)
     local owner = self:GetOwner()
@@ -307,9 +326,7 @@ function SWEP:Reload()
     end
 
     -- shotgun reload
-    if self:Clip1() < self.Primary.ClipSize
-        and self:GetOwner():GetAmmoCount(self.Primary.Ammo) > 0
-    then
+    if self:Clip1() < self.Primary.ClipSize and self:GetOwner():GetAmmoCount(self.Primary.Ammo) > 0 then
         self:StartReload()
     end
 end
@@ -435,7 +452,7 @@ function SWEP:DoRecoil()
 	
 	-- modify if aiming down sights
 	if self:GetIronsights() then
-		recoil = recoil * 0.5
+		recoil = recoil * self.ADS_RecoilMul
 	end
 
     -- initialize recoil step
@@ -683,20 +700,81 @@ if CLIENT then
 	end
 	
 	function SWEP:DrawCrosshairHUD(x, y)
-		local baseGap = math.max(0.2, 100 * self.Primary.Cone)
-		local coneGap = self.Primary.Cone * 300
+		local cone = self:GetCurrentCone()
 		local recoilKick = (self.RecoilKick or 0) * 4
+
+		local baseGap = math.max(0.2, 100 * cone)
+		local coneGap = cone * 300
 		local gap = baseGap + coneGap + recoilKick
 
 		local length = 8 + recoilKick
+		local thickness = 1 + (recoilKick * 0.15)
 
-		surface.SetDrawColor(255, 255, 255, 255)
-		
-		surface.DrawLine(x - gap, y, x - gap - length, y) -- left
-		surface.DrawLine(x + gap, y, x + gap + length, y) -- right
-		surface.DrawLine(x, y - gap, x, y - gap - length) -- top
-		surface.DrawLine(x, y + gap, x, y + gap + length) -- bottom
+		-- fade when cone is tiny
+		if cone < 0.01 then
+			surface.SetDrawColor(200, 200, 200, 100)
+		else
+			surface.SetDrawColor(255, 255, 255, 255)
+		end
+
+		draw.NoTexture()
+
+		-- left
+		surface.DrawPoly({
+			{x = x - gap - length, y = y - thickness},
+			{x = x - gap,          y = y - thickness},
+			{x = x - gap,          y = y + thickness},
+			{x = x - gap - length, y = y + thickness},
+		})
+
+		-- right
+		surface.DrawPoly({
+			{x = x + gap,          y = y - thickness},
+			{x = x + gap + length, y = y - thickness},
+			{x = x + gap + length, y = y + thickness},
+			{x = x + gap,          y = y + thickness},
+		})
+
+		-- top
+		surface.DrawPoly({
+			{x = x - thickness, y = y - gap - length},
+			{x = x + thickness, y = y - gap - length},
+			{x = x + thickness, y = y - gap},
+			{x = x - thickness, y = y - gap},
+		})
+
+		-- bottom
+		surface.DrawPoly({
+			{x = x - thickness, y = y + gap},
+			{x = x + thickness, y = y + gap},
+			{x = x + thickness, y = y + gap + length},
+			{x = x - thickness, y = y + gap + length},
+		})
+
+		-- fsa dot
+		if cone < 0.01 then
+			local dotSize = 3 + (recoilKick * 0.2)
+			surface.SetDrawColor(255, 255, 255, 220)
+			draw.NoTexture()
+
+			local segments = 16
+			local poly = {}
+
+			for i = 0, segments - 1 do
+				local a0 = (i / segments) * math.pi * 2
+				local a1 = ((i + 1) / segments) * math.pi * 2
+
+				table.insert(poly, {
+					x = x + math.cos(a0) * dotSize,
+					y = y + math.sin(a0) * dotSize
+				})
+			end
+
+			surface.DrawPoly(poly)
+		end
 	end
+
+
 	
 	-- draw a crazy tesselated slice with convex quads
 	local function drawDonutSlice(centerX, centerY, innerRadius, outerRadius, startAngle, endAngle, segments, color)
@@ -892,9 +970,9 @@ if CLIENT then
 		local prog = self:GetReloadProgress()
 		if prog <= 0 then return end
 
-		local radius = 20
-		local thickness = 20
-		local segments = 64
+		local radius = 15
+		local thickness = 15
+		local segments = 32
 
 		surface.SetDrawColor(255, 255, 255, 220)
 		draw.NoTexture()

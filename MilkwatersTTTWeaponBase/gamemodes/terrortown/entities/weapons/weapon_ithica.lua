@@ -36,6 +36,8 @@ SWEP.Primary.Ammo = "Buckshot"
 
 SWEP.HeadshotMultiplier = 2.0
 
+SWEP.FirstShotAccurate = false
+
 SWEP.ShotgunReload = true
 
 -- animations
