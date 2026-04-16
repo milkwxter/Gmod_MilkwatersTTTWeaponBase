@@ -1,4 +1,4 @@
-EFFECT.Mat = Material("trails/laser")
+EFFECT.Mat = Material("tacrp/tracer")
 
 function EFFECT:Init(data)
     -- engine fallback positions
@@ -34,7 +34,7 @@ function EFFECT:Init(data)
         end
     end
 
-    self.LifeTime = 0.05
+    self.LifeTime = 0.8
     self.DieTime  = CurTime() + self.LifeTime
 end
 
