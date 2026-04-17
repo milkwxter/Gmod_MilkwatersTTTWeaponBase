@@ -20,7 +20,7 @@ SWEP.UseHands = true
 SWEP.ViewModelFlip = false
 
 -- Primary stats
-SWEP.Primary.Sound = Sound( "tacrp/weapons/m4star10/fire-2.wav" )
+SWEP.Primary.Sound = Sound( "tacint_shark/weapons/auto5/winchestersx3_fire_02.wav" )
 SWEP.Primary.Damage = 11
 SWEP.Primary.NumShots = 8
 SWEP.Primary.Delay = 60 / 200
